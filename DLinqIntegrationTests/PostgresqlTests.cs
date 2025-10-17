@@ -13,7 +13,7 @@ namespace DLinqIntegrationTests
 
         public PostgresqlTests()
         {
-            var connection = new NpgsqlConnection("Host=localhost;Port=5432;Database=DLinq;Username=postgres;Password=xyxyxyxyxy;");
+            var connection = new NpgsqlConnection("Host=localhost;Port=5432;Database=DLinq;Username=postgres-user-name;Password=your-password-here;");
             var dialect = new PostgresDialect(PostgresDialect.DialectOptions.ForceLowerCase);
             var dapperProvider = new DapperProvider(connection);
             dlinq = new DLinqConnection(connection, dialect, dapperProvider);
