@@ -1,0 +1,35 @@
+﻿using System.Data;
+using System.Linq.Expressions;
+
+namespace DLinq
+{
+    public interface IDLinqConnection
+    {
+        string ConnectionString { get; set; }
+        int ConnectionTimeout { get; }
+        string Database { get; }
+        ConnectionState State { get; }
+        int TransactionDepth { get; }
+
+        IDbTransaction BeginTransaction();
+        IDbTransaction BeginTransaction(IsolationLevel il);
+        void ChangeDatabase(string databaseName);
+        void Close();
+        void Commit();
+        IDbCommand CreateCommand();
+        int Delete<T>(Expression<Func<T, bool>> predicate, Options? options = null);
+        int Delete<T>(T entity, Options? options = null);
+        void Dispose();
+        T? GetById<T, TKey>(TKey key);
+        T? GetById<T>(object keyValues);
+        R? Insert<T, R>(T entity, Options? options = null);
+        T? Insert<T>(T entity, Options? options = null);
+        void Open();
+        SqlQuery<T> Query<T>();
+        IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate);
+        IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery);
+        void Rollback();
+        SqlQuery<T> Select<T>();
+        T? Update<T>(T entity, Options? options = null);
+    }
+}

@@ -11,7 +11,7 @@ using Dapper;
 
 namespace DLinq
 {
-    public class DLinqConnection : IDbConnection, IDisposable
+    public class DLinqConnection : IDbConnection, IDisposable, IDLinqConnection
     {
         private IDbConnection? _conn;
         private readonly QueryProvider _provider;
@@ -30,13 +30,13 @@ namespace DLinq
             _dapper = dapperProvider ?? new DapperProvider(connection);
         }
 
-        public IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery)
+        public virtual IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
-        public IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate)
+        public virtual IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate)
         {
             var query = Select<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
@@ -44,10 +44,10 @@ namespace DLinq
         }
 
         // Expose SqlQuery<T> for LINQ operations
-        public SqlQuery<T> Select<T>() => new SqlQuery<T>(_provider);
-        public SqlQuery<T> Query<T>() => new SqlQuery<T>(_provider);
+        public virtual SqlQuery<T> Select<T>() => new SqlQuery<T>(_provider);
+        public virtual SqlQuery<T> Query<T>() => new SqlQuery<T>(_provider);
 
-        public int TransactionDepth => _transactionDepth;
+        public virtual int TransactionDepth => _transactionDepth;
 
         // Helper to pass transaction to DapperProvider
         private IDbTransaction? GetCurrentTransaction()
@@ -63,7 +63,7 @@ namespace DLinq
         /// Gets an entity of type T by its key(s).
         /// Pass an object whose properties match the key fields of T.
         /// </summary>
-        public T? GetById<T>(object keyValues)
+        public virtual T? GetById<T>(object keyValues)
         {
             var keyProps = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(KeyAttribute), true).Any())
@@ -110,7 +110,7 @@ namespace DLinq
         /// <summary>
         /// Gets an entity of type T by its single key field.
         /// </summary>
-        public T? GetById<T, TKey>(TKey key)
+        public virtual T? GetById<T, TKey>(TKey key)
         {
             var keyProps = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(KeyAttribute), true).Any())
@@ -141,7 +141,7 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
-        public T? Insert<T>(T entity, Options? options = null)
+        public virtual T? Insert<T>(T entity, Options? options = null)
         {
             Open();
             try
@@ -163,7 +163,7 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
-        public R? Insert<T,R>(T entity, Options? options = null)
+        public virtual R? Insert<T, R>(T entity, Options? options = null)
         {
             Open();
             try
@@ -185,7 +185,7 @@ namespace DLinq
         /// <summary>
         /// Updates an entity of type T in the database. If Option.SelectAfterMutation is true, returns the updated entity.
         /// </summary>
-        public T? Update<T>(T entity, Options? options = null)
+        public virtual T? Update<T>(T entity, Options? options = null)
         {
             Open();
             try
@@ -207,7 +207,7 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
-        public int Delete<T>(Expression<Func<T, bool>> predicate, Options? options = null)
+        public virtual int Delete<T>(Expression<Func<T, bool>> predicate, Options? options = null)
         {
             Open();
             try
@@ -226,7 +226,7 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
-        public int Delete<T>(T entity, Options? options = null)
+        public virtual int Delete<T>(T entity, Options? options = null)
         {
             Open();
             try
@@ -244,7 +244,7 @@ namespace DLinq
         /// Commits the current transaction if one exists, and decrements transaction depth.
         /// Committing a null transaction has no effect.
         /// </summary>
-        public void Commit()
+        public virtual void Commit()
         {
             if (_recursiveCommit) return; //protects from possible recursion from Transaction.Commit calling back
             _recursiveCommit = true;
@@ -261,7 +261,7 @@ namespace DLinq
         /// Rolls back the current transaction and resets transaction depth.
         /// Rolling back a null transaction throws InvalidOperationException.
         /// </summary>
-        public void Rollback()
+        public virtual void Rollback()
         {
             if (_recursiveRollback) return; //protects from possible recursion from Transaction.Rollback calling back
             _recursiveRollback = true;
@@ -272,12 +272,12 @@ namespace DLinq
         }
 
         // IDbConnection implementation
-        public string ConnectionString { get { return _conn?.ConnectionString!; } set { if (_conn != null) _conn.ConnectionString = value; } }
-        public int ConnectionTimeout => _conn?.ConnectionTimeout ?? 0;
-        public string Database => _conn?.Database!;
-        public ConnectionState State => _conn?.State ?? ConnectionState.Closed;
-        public void ChangeDatabase(string databaseName) => _conn?.ChangeDatabase(databaseName);
-        public void Close()
+        public virtual string ConnectionString { get { return _conn?.ConnectionString!; } set { if (_conn != null) _conn.ConnectionString = value; } }
+        public virtual int ConnectionTimeout => _conn?.ConnectionTimeout ?? 0;
+        public virtual string Database => _conn?.Database!;
+        public virtual ConnectionState State => _conn?.State ?? ConnectionState.Closed;
+        public virtual void ChangeDatabase(string databaseName) => _conn?.ChangeDatabase(databaseName);
+        public virtual void Close()
         {
             if (_conn == null) return;
             _conn.Close();
@@ -286,8 +286,8 @@ namespace DLinq
         {
             if (_wasClosed) Close();
         }
-        public IDbCommand CreateCommand() => _conn.CreateCommand();
-        public void Open()
+        public virtual IDbCommand CreateCommand() => _conn.CreateCommand();
+        public virtual void Open()
         {
             if (_conn == null) throw new InvalidOperationException("Cannot open a null connection. It may have been disposed.");
             if (_conn.State == ConnectionState.Broken) Close();
@@ -302,7 +302,7 @@ namespace DLinq
         /// </summary>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        public IDbTransaction BeginTransaction()
+        public virtual IDbTransaction BeginTransaction()
         {
             Open();
             if (_conn == null) throw new InvalidOperationException("Cannot begin transaction of a null connection. It may have been disposed.");
@@ -312,7 +312,7 @@ namespace DLinq
         }
 
         //Begins a transaction with specified isolation level. Supports nested transactions by counting depth.
-        public IDbTransaction BeginTransaction(IsolationLevel il)
+        public virtual IDbTransaction BeginTransaction(IsolationLevel il)
         {
             Open();
             if (_conn == null) throw new InvalidOperationException("Cannot begin transaction of a null connection. It may have been disposed.");
@@ -331,7 +331,7 @@ namespace DLinq
             _recursiveDispose = false;
         }
 
-        public void Dispose()
+        public virtual void Dispose()
         {
             TransDispose();
             Close();
