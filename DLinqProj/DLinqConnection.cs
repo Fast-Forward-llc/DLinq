@@ -43,6 +43,19 @@ namespace DLinq
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
+        public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery)
+        {
+            var (sql, parameters) = sqlQuery.ToSql();
+            return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
+        }
+
+        public virtual async Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate)
+        {
+            var query = Select<T>().Where(predicate);
+            var (sql, parameters) = query.ToSql();
+            return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
+        }
+
         // Expose SqlQuery<T> for LINQ operations
         public virtual SqlQuery<T> Select<T>() => new SqlQuery<T>(_provider);
         public virtual SqlQuery<T> Query<T>() => new SqlQuery<T>(_provider);
@@ -65,6 +78,38 @@ namespace DLinq
         /// </summary>
         public virtual T? GetById<T>(object keyValues)
         {
+            var (sql, parameters) = GetByIdCore<T>(keyValues);
+            Open();
+            try
+            {
+                return _dapper.QuerySingleOrDefault<T>(sql, parameters!, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        /// <summary>
+        /// Gets an entity of type T by its key(s).
+        /// Pass an object whose properties match the key fields of T.
+        /// </summary>
+        public virtual async Task<T?> GetByIdAsync<T>(object keyValues)
+        {
+            var (sql, parameters) = GetByIdCore<T>(keyValues);
+            Open();
+            try
+            {
+                return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters!, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        protected virtual (string sql, object? parameters) GetByIdCore<T>(object keyValues)
+        {
             var keyProps = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(KeyAttribute), true).Any())
                 .ToArray();
@@ -81,7 +126,7 @@ namespace DLinq
                 var valueProp = keyValueType.GetProperty(keyProp.Name);
                 if (valueProp == null)
                     throw new ArgumentException($"Key value object does not contain property '{keyProp.Name}'.");
-                values[i] = valueProp.GetValue(keyValues);
+                values[i] = valueProp.GetValue(keyValues)!;
             }
 
             var param = Expression.Parameter(typeof(T), "x");
@@ -96,6 +141,15 @@ namespace DLinq
             var lambda = Expression.Lambda<Func<T, bool>>(predicate, param);
             var query = Select<T>().Where(lambda);
             var (sql, parameters) = query.ToSql();
+            return (sql, parameters);
+        }
+
+        /// <summary>
+        /// Gets an entity of type T by its single key field.
+        /// </summary>
+        public virtual T? GetById<T, TKey>(TKey key)
+        {
+            var (sql, parameters) = GetByIdCore<T, TKey>(key);
             Open();
             try
             {
@@ -110,7 +164,21 @@ namespace DLinq
         /// <summary>
         /// Gets an entity of type T by its single key field.
         /// </summary>
-        public virtual T? GetById<T, TKey>(TKey key)
+        public virtual async Task<T?> GetByIdAsync<T, TKey>(TKey key)
+        {
+            var (sql, parameters) = GetByIdCore<T, TKey>(key);
+            Open();
+            try
+            {
+                return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        protected virtual (string sql, object? parameters) GetByIdCore<T, TKey>(TKey key)
         {
             var keyProps = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(KeyAttribute), true).Any())
@@ -127,15 +195,7 @@ namespace DLinq
             var lambda = Expression.Lambda<Func<T, bool>>(equal, param);
             var query = Select<T>().Where(lambda);
             var (sql, parameters) = query.ToSql();
-            Open();
-            try
-            {
-                return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
-            }
-            finally
-            {
-                _Close();
-            }
+            return (sql, parameters);
         }
 
         /// <summary>
@@ -163,6 +223,28 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
+        public virtual async Task<T?> InsertAsync<T>(T entity, Options? options = null)
+        {
+            Open();
+            try
+            {
+                var (sql, parameters) = Select<T>().ToInsertSql(entity, options);
+                if (options?.SelectAfterMutation == true)
+                {
+                    return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
+                }
+                await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
+                return default;
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        /// <summary>
+        /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
+        /// </summary>
         public virtual R? Insert<T, R>(T entity, Options? options = null)
         {
             Open();
@@ -171,9 +253,30 @@ namespace DLinq
                 var (sql, parameters) = Select<T>().ToInsertSql<R>(entity, options);
                 if (options?.SelectAfterMutation == true)
                 {
-                    //return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
+                    return _dapper.QuerySingleOrDefault<R>(sql, parameters, GetCurrentTransaction()!);
                 }
                 _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
+                return default;
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+        /// <summary>
+        /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
+        /// </summary>
+        public virtual async Task<R?> InsertAsync<T, R>(T entity, Options? options = null)
+        {
+            Open();
+            try
+            {
+                var (sql, parameters) = Select<T>().ToInsertSql<R>(entity, options);
+                if (options?.SelectAfterMutation == true)
+                {
+                    return await _dapper.QuerySingleOrDefaultAsync<R>(sql, parameters, GetCurrentTransaction()!);
+                }
+                await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
                 return default;
             }
             finally
@@ -204,6 +307,25 @@ namespace DLinq
             }
         }
 
+        public virtual async Task<T?> UpdateAsync<T>(T entity, Options? options = null)
+        {
+            Open();
+            try
+            {
+                var (sql, parameters) = Select<T>().ToUpdateSql(entity, options);
+                if (options?.SelectAfterMutation == true)
+                {
+                    return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
+                }
+                await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
+                return default;
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
@@ -226,6 +348,25 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
+        public virtual async Task<int> DeleteAsync<T>(Expression<Func<T, bool>> predicate, Options? options = null)
+        {
+            Open();
+            try
+            {
+                // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
+                var query = Select<T>();
+                var (sql, parameters) = query.ToDeleteSql(predicate, options);
+                return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        /// <summary>
+        /// Deletes entities of type T from the database matching the given predicate.
+        /// </summary>
         public virtual int Delete<T>(T entity, Options? options = null)
         {
             Open();
@@ -233,6 +374,23 @@ namespace DLinq
             {
                 var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        /// <summary>
+        /// Deletes entities of type T from the database matching the given predicate.
+        /// </summary>
+        public virtual async Task<int> DeleteAsync<T>(T entity, Options? options = null)
+        {
+            Open();
+            try
+            {
+                var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
+                return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
             }
             finally
             {

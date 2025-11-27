@@ -19,17 +19,26 @@ namespace DLinq
         IDbCommand CreateCommand();
         int Delete<T>(Expression<Func<T, bool>> predicate, Options? options = null);
         int Delete<T>(T entity, Options? options = null);
+        Task<int> DeleteAsync<T>(Expression<Func<T, bool>> predicate, Options? options = null);
+        Task<int> DeleteAsync<T>(T entity, Options? options = null);
         void Dispose();
         T? GetById<T, TKey>(TKey key);
         T? GetById<T>(object keyValues);
+        Task<T?> GetByIdAsync<T, TKey>(TKey key);
+        Task<T?> GetByIdAsync<T>(object keyValues);
         R? Insert<T, R>(T entity, Options? options = null);
         T? Insert<T>(T entity, Options? options = null);
+        Task<R?> InsertAsync<T, R>(T entity, Options? options = null);
+        Task<T?> InsertAsync<T>(T entity, Options? options = null);
         void Open();
         SqlQuery<T> Query<T>();
         IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate);
         IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery);
+        Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate);
+        Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery);
         void Rollback();
         SqlQuery<T> Select<T>();
         T? Update<T>(T entity, Options? options = null);
+        Task<T?> UpdateAsync<T>(T entity, Options? options = null);
     }
 }
