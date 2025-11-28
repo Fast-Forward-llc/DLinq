@@ -31,6 +31,16 @@ namespace DLinq
         /// </summary>
         public ISqlDialect Dialect => _dialect;
 
+        // Helper to evaluate any expression (variable, property, constant, etc.)
+        private static object GetValueFromExpression(Expression expr)
+        {
+            if (expr is ConstantExpression c)
+                return c.Value;
+            var lambda = Expression.Lambda(expr);
+            var compiled = lambda.Compile();
+            return compiled.DynamicInvoke();
+        }
+
         /// <summary>
         /// Parses a predicate expression (e.g., from a Where clause) into SQL syntax and collects parameters.
         /// Supports AND/OR, comparison, IN/NOT IN, and basic member access.
@@ -54,31 +64,17 @@ namespace DLinq
                 MemberExpression member = null;
                 object constantValue = null;
 
-                // Handle left side as member, right side as constant or unary
+                // Handle left side as member, right side as value
                 if (binary.Left is MemberExpression leftMember)
                 {
                     member = leftMember;
-                    if (binary.Right is ConstantExpression rightConst)
-                    {
-                        constantValue = rightConst.Value;
-                    }
-                    else if (binary.Right is UnaryExpression rightUnary && rightUnary.Operand is ConstantExpression rightUnaryConst)
-                    {
-                        constantValue = rightUnaryConst.Value;
-                    }
+                    constantValue = GetValueFromExpression(binary.Right);
                 }
-                // Handle right side as member, left side as constant or unary
+                // Handle right side as member, left side as value
                 else if (binary.Right is MemberExpression rightMember)
                 {
                     member = rightMember;
-                    if (binary.Left is ConstantExpression leftConst)
-                    {
-                        constantValue = leftConst.Value;
-                    }
-                    else if (binary.Left is UnaryExpression leftUnary && leftUnary.Operand is ConstantExpression leftUnaryConst)
-                    {
-                        constantValue = leftUnaryConst.Value;
-                    }
+                    constantValue = GetValueFromExpression(binary.Left);
                 }
 
                 if (member != null && constantValue != null)
@@ -105,20 +101,20 @@ namespace DLinq
             {
                 var member = containsCall.Arguments[0] as MemberExpression;
                 var valuesExpr = containsCall.Object ?? containsCall.Arguments[0];
-                var values = (valuesExpr as ConstantExpression)?.Value as IEnumerable<object>;
+                IEnumerable<object> values = null;
                 if (member == null && containsCall.Arguments.Count == 2)
                 {
                     member = containsCall.Arguments[1] as MemberExpression;
                     valuesExpr = containsCall.Arguments[0];
-                    values = (valuesExpr as ConstantExpression)?.Value as IEnumerable<object>;
                 }
-                if (member != null && valuesExpr is ConstantExpression constExpr)
+                if (member != null)
                 {
+                    values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
                     var prop = entityType.GetProperty(member.Member.Name);
                     var colAttr = prop?.GetCustomAttribute<ColumnAttribute>();
                     var colName = colAttr?.Name ?? member.Member.Name;
                     var paramNames = new List<string>();
-                    foreach (var v in (constExpr.Value as IEnumerable<object>) ?? Enumerable.Empty<object>())
+                    foreach (var v in values ?? Enumerable.Empty<object>())
                     {
                         parameters.Add(v);
                         paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
@@ -133,20 +129,20 @@ namespace DLinq
                 {
                     var member = notContainsCall.Arguments[0] as MemberExpression;
                     var valuesExpr = notContainsCall.Object ?? notContainsCall.Arguments[0];
-                    var values = (valuesExpr as ConstantExpression)?.Value as IEnumerable<object>;
+                    IEnumerable<object> values = null;
                     if (member == null && notContainsCall.Arguments.Count == 2)
                     {
                         member = notContainsCall.Arguments[1] as MemberExpression;
                         valuesExpr = notContainsCall.Arguments[0];
-                        values = (valuesExpr as ConstantExpression)?.Value as IEnumerable<object>;
                     }
-                    if (member != null && valuesExpr is ConstantExpression constExpr)
+                    if (member != null)
                     {
+                        values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
                         var prop = entityType.GetProperty(member.Member.Name);
                         var colAttr = prop?.GetCustomAttribute<ColumnAttribute>();
                         var colName = colAttr?.Name ?? member.Member.Name;
                         var paramNames = new List<string>();
-                        foreach (var v in (constExpr.Value as IEnumerable<object>) ?? Enumerable.Empty<object>())
+                        foreach (var v in values ?? Enumerable.Empty<object>())
                         {
                             parameters.Add(v);
                             paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
@@ -312,9 +308,27 @@ namespace DLinq
             var innerKeyLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[3]).Operand;
             var outerKey = (outerKeyLambda.Body as MemberExpression)?.Member.Name;
             var innerKey = (innerKeyLambda.Body as MemberExpression)?.Member.Name;
-            var innerType = inner.GetType().GetGenericArguments()[0];
+
+            // Determine the element type of the inner sequence robustly
+            Type innerType = null;
+            if (inner.Type.IsGenericType)
+            {
+                // e.g. SqlQuery<Pet> or IQueryable<Pet>
+                innerType = inner.Type.GetGenericArguments()[0];
+            }
+            else if (inner is ConstantExpression constExpr && constExpr.Value != null && constExpr.Value.GetType().IsGenericType)
+            {
+                // fallback to the runtime value if the expression is a constant holding a generic sequence
+                innerType = constExpr.Value.GetType().GetGenericArguments()[0];
+            }
+            else
+            {
+                throw new InvalidOperationException($"Unable to determine inner element type for Join expression ({inner}).");
+            }
+
             var innerTableAttr = innerType.GetCustomAttribute<TableAttribute>();
             var innerTable = innerTableAttr?.Name ?? innerType.Name;
+
             joins.Add(new SqlJoinNode
             {
                 Table = innerTable,
