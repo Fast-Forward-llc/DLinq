@@ -199,6 +199,9 @@ namespace DLinq
                     case "Where":
                         HandleWhere(mce, parameters, ref whereSql, ref entityType, ref current);
                         break;
+                    case "Select":
+                        current = mce.Arguments[0];
+                        break;
                     default:
                         current = (current as MethodCallExpression)?.Arguments[0];
                         break;
@@ -215,7 +218,7 @@ namespace DLinq
                     if (type.GetGenericTypeDefinition() == typeof(SqlQuery<>))
                     {
                         entityType = type.GetGenericArguments()[0];
-                    }
+                      }
                     // Try IQueryable<T>
                     else if (typeof(IQueryable).IsAssignableFrom(type))
                     {
@@ -302,40 +305,88 @@ namespace DLinq
 
         private static void HandleJoin(MethodCallExpression mce, List<SqlJoinNode> joins, ref Expression current)
         {
-            var outer = mce.Arguments[0];
-            var inner = mce.Arguments[1];
-            var outerKeyLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[2]).Operand;
-            var innerKeyLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[3]).Operand;
-            var outerKey = (outerKeyLambda.Body as MemberExpression)?.Member.Name;
-            var innerKey = (innerKeyLambda.Body as MemberExpression)?.Member.Name;
+            // Determine whether the call is an instance-style call (mce.Object != null)
+            // or a static/extension call (mce.Object == null) and pick argument indexes accordingly.
+            Expression outer;
+            Expression inner;
+            LambdaExpression outerKeyLambda;
+            LambdaExpression innerKeyLambda;
 
-            // Determine the element type of the inner sequence robustly
-            Type innerType = null;
-            if (inner.Type.IsGenericType)
+            if (mce.Object != null)
             {
-                // e.g. SqlQuery<Pet> or IQueryable<Pet>
-                innerType = inner.Type.GetGenericArguments()[0];
-            }
-            else if (inner is ConstantExpression constExpr && constExpr.Value != null && constExpr.Value.GetType().IsGenericType)
-            {
-                // fallback to the runtime value if the expression is a constant holding a generic sequence
-                innerType = constExpr.Value.GetType().GetGenericArguments()[0];
+                // instance-call form: outer.Join(inner, outerKey, innerKey, resultSelector)
+                outer = mce.Object;
+                inner = mce.Arguments[0];
+                outerKeyLambda = GetLambda(mce.Arguments[1]);
+                innerKeyLambda = GetLambda(mce.Arguments[2]);
             }
             else
             {
-                throw new InvalidOperationException($"Unable to determine inner element type for Join expression ({inner}).");
+                // static/extension-call form: Join(outer, inner, outerKey, innerKey, resultSelector)
+                outer = mce.Arguments[0];
+                inner = mce.Arguments[1];
+                outerKeyLambda = GetLambda(mce.Arguments[2]);
+                innerKeyLambda = GetLambda(mce.Arguments[3]);
             }
 
-            var innerTableAttr = innerType.GetCustomAttribute<TableAttribute>();
-            var innerTable = innerTableAttr?.Name ?? innerType.Name;
+            // Helper to extract lambda from argument
+            static LambdaExpression GetLambda(Expression arg)
+            {
+                if (arg is LambdaExpression le)
+                    return le;
+                if (arg is UnaryExpression ue && ue.NodeType == ExpressionType.Quote && ue.Operand is LambdaExpression quotedLambda)
+                    return quotedLambda;
+                throw new NotSupportedException($"Join key selector argument must be a lambda expression (possibly quoted). Got: {arg}");
+            }
+
+            // Helper to extract member from lambda body
+            static MemberExpression FindMember(Expression expr)
+            {
+                while (expr is UnaryExpression ue &&
+                       (ue.NodeType == ExpressionType.Convert ||
+                        ue.NodeType == ExpressionType.ConvertChecked ||
+                        ue.NodeType == ExpressionType.Quote))
+                {
+                    expr = ue.Operand;
+                }
+                if (expr is MemberExpression me)
+                    return me;
+                throw new NotSupportedException($"Join key selectors must be or contain a member expression. Got: {expr}");
+            }
+
+            var outerKeyMember = FindMember(outerKeyLambda.Body);
+            var innerKeyMember = FindMember(innerKeyLambda.Body);
+
+            if (outerKeyMember.Type != innerKeyMember.Type)
+                throw new InvalidOperationException($"Join key types do not match: {outerKeyMember.Type} vs {innerKeyMember.Type}");
+
+            var outerType = outerKeyMember.Expression.Type;
+            var innerType = innerKeyMember.Expression.Type;
+            var outerTable = outerType.GetCustomAttribute<TableAttribute>()?.Name ?? outerType.Name;
+            var innerTable = innerType.GetCustomAttribute<TableAttribute>()?.Name ?? innerType.Name;
+
+            var outerCol = outerKeyMember.Member.Name;
+            var innerCol = innerKeyMember.Member.Name;
 
             joins.Add(new SqlJoinNode
             {
                 Table = innerTable,
-                LeftColumn = outerKey,
-                RightColumn = innerKey,
-                JoinType = "INNER"
+                LeftColumn = outerCol,
+                RightColumn = innerCol,
+                JoinType = "INNER",
+                OnColumns = new List<SqlJoinOnColumn>
+                {
+                    new SqlJoinOnColumn
+                    {
+                        LeftTable = outerTable,
+                        LeftColumn = outerCol,
+                        RightTable = innerTable,
+                        RightColumn = innerCol
+                    }
+                }
             });
+
+            // Set current to the outer sequence for further processing
             current = outer;
         }
 

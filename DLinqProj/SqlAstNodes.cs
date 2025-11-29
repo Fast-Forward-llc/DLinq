@@ -24,7 +24,8 @@ namespace DLinq
         public string Table { get; set; }
         public string LeftColumn { get; set; }
         public string RightColumn { get; set; }
-        public string JoinType { get; set; } // e.g., "INNER", "LEFT"
+        public string JoinType { get; set; }
+        public List<SqlJoinOnColumn> OnColumns { get; set; } = new();
     }
 
     public class SqlFunctionSource
@@ -39,5 +40,13 @@ namespace DLinq
         public string Operator { get; set; }
         public object Value { get; set; } // Can be IEnumerable<object> or SqlSelectNode (subquery)
         public bool IsSubQuery { get; set; } = false;
+    }
+
+    public class SqlJoinOnColumn
+    {
+        public string LeftTable { get; set; }
+        public string LeftColumn { get; set; }
+        public string RightTable { get; set; }
+        public string RightColumn { get; set; }
     }
 }

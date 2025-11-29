@@ -84,7 +84,10 @@ namespace DLinq
             {
                 foreach (var join in ast.Joins)
                 {
-                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {FormatColumn(join.LeftColumn)} = {FormatColumn(join.RightColumn)}");
+                    var onClauses = join.OnColumns.Select(on =>
+                        $"{FormatTable(on.LeftTable)}.{FormatColumn(on.LeftColumn)} = {FormatTable(on.RightTable)}.{FormatColumn(on.RightColumn)}"
+                    );
+                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {string.Join(" AND ", onClauses)}");
                 }
             }
             if (!string.IsNullOrEmpty(ast.WhereSql))
