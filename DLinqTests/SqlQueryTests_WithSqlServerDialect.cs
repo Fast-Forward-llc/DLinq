@@ -239,5 +239,103 @@ namespace DLinqTests
             Assert.IsTrue(sql.Contains("Employee") || sql.Contains("employee"), "SQL should reference Employee table.");
             Assert.IsTrue(sql.Contains("Department") || sql.Contains("department"), "SQL should reference Department table.");
         }
+
+        [TestMethod]
+        public void Join_OverloadWithoutInnerQuery_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var people = new SqlQuery<Person>(provider);
+            // Use the new overload that does not require explicit inner SqlQuery parameter
+            var joined = people.Join<Pet, int, PersonPet>(
+                person => person.Id,
+                pet => pet.OwnerId,
+                (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
+            );
+            var (sql, parameters) = joined.ToSql();
+            Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
+            Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
+            Assert.IsTrue(sql.Contains("Pet") || sql.Contains("pet"));
+        }
+
+        [TestMethod]
+        public void Join_OverloadWithoutInnerQuery_WithWhere_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var people = new SqlQuery<Person>(provider);
+            var joined = people.Join<Pet, int, PersonPet>(
+                person => person.Id,
+                pet => pet.OwnerId,
+                (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
+            ).Where(x => x.PersonName == "Alice");
+            var (sql, parameters) = joined.ToSql();
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("PersonName"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Alice", paramDict["p0"]);
+        }
+
+        private class Order
+        {
+            public int Id { get; set; }
+            public int CustomerId { get; set; }
+            public int ProductId { get; set; }
+        }
+        private class Customer
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+        private class Product
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+        private class OrderInfo
+        {
+            public string CustomerName { get; set; }
+            public string ProductName { get; set; }
+        }
+        private class OrderCustomer
+        {
+            public Order o { get; set; }
+            public Customer c { get; set; }
+        }
+        private class OrderCustomerProduct
+        {
+            public OrderCustomer oc { get; set; }
+            public Product p { get; set; }
+        }
+
+        [TestMethod]
+        public void MultipleJoins_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var orders = new SqlQuery<Order>(provider);
+            var query = orders
+                .Join<Customer, int, OrderCustomer>(
+                    o => o.CustomerId,
+                    c => c.Id,
+                    (o, c) => new OrderCustomer { o = o, c = c }
+                )
+                .Join<Product, int, OrderCustomerProduct>(
+                    oc => oc.o.ProductId,
+                    p => p.Id,
+                    (oc, p) => new OrderCustomerProduct { oc = oc, p = p }
+                )
+                .Select(x => new OrderInfo
+                {
+                    CustomerName = x.oc.c.Name,
+                    ProductName = x.p.Name
+                });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("JOIN", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("Order", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("Customer", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("Product", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("CustomerName", StringComparison.OrdinalIgnoreCase) || sql.Contains("ProductName", StringComparison.OrdinalIgnoreCase));
+        }
+
+        
     }
 }

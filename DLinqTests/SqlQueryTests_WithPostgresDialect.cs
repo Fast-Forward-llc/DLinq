@@ -1,12 +1,13 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Castle.Core.Resource;
 using DLinq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
-using System.Linq.Expressions;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Dynamic;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace DLinqTests
 {
@@ -33,6 +34,12 @@ namespace DLinqTests
         {
             public string PersonName { get; set; }
             public string PetName { get; set; }
+        }
+
+        private class PersonPetJoin
+        {
+            public Person Person { get; set; }
+            public Pet Pet { get; set; }
         }
 
         [TestMethod]
@@ -154,6 +161,7 @@ namespace DLinqTests
                 (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
             );
             var (sql, parameters) = joined.ToSql();
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
             // Should reference both Person and Pet columns
             Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
@@ -173,6 +181,7 @@ namespace DLinqTests
                 (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
             ).Where(x => x.PersonName == "Alice");
             var (sql, parameters) = joined.ToSql();
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("WHERE"));
             Assert.IsTrue(sql.Contains("PersonName"));
             var paramDict = (IDictionary<string, object>)parameters;
@@ -223,5 +232,44 @@ namespace DLinqTests
             StringAssert.Contains(sql, "\"Employee\"", "SQL should reference Employee table.");
             StringAssert.Contains(sql, "\"Department\"", "SQL should reference Department table.");
         }
+
+        [TestMethod]
+        public void Join_OverloadWithoutInnerQuery_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var people = new SqlQuery<Person>(provider);
+            // Use the new overload that does not require explicit inner SqlQuery parameter
+            var joined = people.Join<Pet, int, PersonPetJoin>(
+                person => person.Id,
+                pet => pet.OwnerId,
+                (person, pet) => new PersonPetJoin { Person = person, Pet = pet }
+            ).Select( _ => new PersonPet() { PersonName = _.Person.Name, PetName = _.Pet.Name });
+            var (sql, parameters) = joined.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
+            Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
+            Assert.IsTrue(sql.Contains("Pet") || sql.Contains("pet"));
+        }
+
+        [TestMethod]
+        public void Join_OverloadWithoutInnerQuery_WithWhere_GeneratesSql()
+        {
+            var targetName = "Alice";
+            var provider = GetProvider();
+            var people = new SqlQuery<Person>(provider);
+            var joined = people.Join<Pet, int, PersonPetJoin>(
+                person => person.Id,
+                pet => pet.OwnerId,
+                (person, pet) => new PersonPetJoin { Person = person, Pet = pet }
+            ).Where(x => x.Person.Name == targetName).Select(x => new PersonPet { PersonName = x.Person.Name, PetName = x.Pet.Name });
+            var (sql, parameters) = joined.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("PersonName"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Alice", paramDict["p0"]);
+        }
+
+        
     }
 }

@@ -143,5 +143,46 @@ namespace DLinq
 
             return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
         }
+
+        // Overload: Join without explicit inner SqlQuery parameter
+        public SqlQuery<TResult> Join<TJoin, TKey, TResult>(
+            Expression<Func<T, TKey>> outerKeySelector,
+            Expression<Func<TJoin, TKey>> innerKeySelector,
+            Expression<Func<T, TJoin, TResult>> resultSelector)
+        {
+            // Construct the inner SqlQuery<TJoin> using the same provider
+            //var inner = new SqlQuery<TJoin>(this.Provider as QueryProvider ?? throw new InvalidOperationException("Provider must be a QueryProvider."));
+            if (!(this.Provider is QueryProvider qp)) throw new InvalidOperationException("Provider must be a QueryProvider."); 
+            var inner = new SqlQuery<TJoin>(qp); 
+            return this.Join(inner, outerKeySelector, innerKeySelector, resultSelector);
+        }
+
+        public SqlQuery<T> Where(Expression<Func<T, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            // Compose the new expression tree
+            var call = Expression.Call(
+                typeof(Queryable),
+                nameof(Queryable.Where),
+                new Type[] { typeof(T) },
+                this.Expression,
+                Expression.Quote(predicate)
+            );
+            return new SqlQuery<T>((QueryProvider)this.Provider, call);
+        }
+        public SqlQuery<TResult> Select<TResult>(Expression<Func<T, TResult>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+
+            var call = Expression.Call(
+                typeof(Queryable),
+                nameof(Queryable.Select),
+                new Type[] { typeof(T), typeof(TResult) },
+                this.Expression,
+                Expression.Quote(selector)
+            );
+
+            return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
+        }
     }
 }

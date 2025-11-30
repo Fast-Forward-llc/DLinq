@@ -173,6 +173,10 @@ namespace DLinq
             string whereSql = null;
             Type entityType = null;
 
+            // Declare columns here so it can be set by projection
+            List<string> columns = null;
+            var primaryKeys = new List<string>();
+
             Expression current = expression;
             while (current is MethodCallExpression mce)
             {
@@ -200,6 +204,12 @@ namespace DLinq
                         HandleWhere(mce, parameters, ref whereSql, ref entityType, ref current);
                         break;
                     case "Select":
+                        var selectorLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
+                        var projectedColumns = ParseProjectionColumns(selectorLambda.Body, _dialect);
+                        if (projectedColumns != null && projectedColumns.Count > 0)
+                        {
+                            columns = projectedColumns;
+                        }
                         current = mce.Arguments[0];
                         break;
                     default:
@@ -214,12 +224,10 @@ namespace DLinq
                 var type = current.Type;
                 if (type.IsGenericType)
                 {
-                    // Try SqlQuery<T>
                     if (type.GetGenericTypeDefinition() == typeof(SqlQuery<>))
                     {
                         entityType = type.GetGenericArguments()[0];
                       }
-                    // Try IQueryable<T>
                     else if (typeof(IQueryable).IsAssignableFrom(type))
                     {
                         entityType = type.GetGenericArguments()[0];
@@ -227,31 +235,38 @@ namespace DLinq
                 }
             }
 
-            // If still not found, try from Expression.Type
             if (entityType == null && expression.Type.IsGenericType)
             {
                 entityType = expression.Type.GetGenericArguments().FirstOrDefault();
             }
 
-            // Final check: throw if entityType is still null
             if (entityType == null)
             {
                 throw new InvalidOperationException("Unable to determine entity type for SQL translation. Ensure your query targets a valid entity type.");
             }
 
-            var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            var columns = new List<string>();
-            var primaryKeys = new List<string>();
-            foreach (var prop in properties)
+            // Only build columns from entityType if not set by projection
+            if (columns == null)
             {
-                if (prop.GetCustomAttribute<NotMappedAttribute>() != null)
-                    continue;
-                var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
-                var colName = colAttr?.Name ?? prop.Name;
-                columns.Add(colName);
-                if (prop.GetCustomAttribute<KeyAttribute>() != null)
-                    primaryKeys.Add(colName);
+                var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                columns = new List<string>();
+                foreach (var prop in properties)
+                {
+                    if (prop.GetCustomAttribute<NotMappedAttribute>() != null)
+                        continue;
+                    var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
+                    var colName = colAttr?.Name ?? prop.Name;
+                    columns.Add(colName);
+                    if (prop.GetCustomAttribute<KeyAttribute>() != null)
+                        primaryKeys.Add(colName);
+                }
             }
+            else
+            {
+                // If columns are set by projection, primaryKeys is not relevant for the select
+                primaryKeys = new List<string>();
+            }
+
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = tableAttr?.Name ?? entityType.Name;
             ast = new SqlSelectNode
@@ -732,6 +747,31 @@ namespace DLinq
                 }
             }
             return keyInfo;
+        }
+
+        private static List<string> ParseProjectionColumns(Expression body, ISqlDialect dialect)
+        {
+            var columns = new List<string>();
+            if (body is MemberInitExpression memberInit)
+            {
+                foreach (var binding in memberInit.Bindings)
+                {
+                    if (binding is MemberAssignment assignment)
+                    {
+                        // Only handle direct member access for now
+                        if (assignment.Expression is MemberExpression memberExpr)
+                        {
+                            // Try to get table and column name
+                            var tableName = memberExpr.Expression.Type.Name;
+                            var columnName = memberExpr.Member.Name;
+                            var alias = assignment.Member.Name;
+                            columns.Add($"{dialect.FormatTable(tableName)}.{dialect.FormatColumn(columnName)} AS {dialect.FormatColumn(alias)}");
+                        }
+                        // Optionally: handle nested MemberInit for more complex projections
+                    }
+                }
+            }
+            return columns;
         }
     }
 }
