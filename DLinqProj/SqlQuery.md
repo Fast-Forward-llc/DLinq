@@ -21,6 +21,53 @@ var query = new SqlQuery<Person>(provider)
 ```
 - Supported methods: `Where`, `OrderBy`, `OrderByDescending`, `ThenBy`, `ThenByDescending`, `Skip`, `Take`, and joins.
 
+## Join Syntax
+`SqlQuery<T>` supports several join syntaxes for composing queries across multiple tables.
+
+### 1. LINQ-style Join with Result Selector
+```csharp
+var people = new SqlQuery<Person>(provider);
+var pets = new SqlQuery<Pet>(provider);
+var joined = people.Join(
+    pets,
+    person => person.Id,
+    pet => pet.OwnerId,
+    (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
+);
+```
+
+### 2. Join Overload Without Explicit Inner Query
+```csharp
+var joined = people.Join<Pet, int, PersonPet>(
+    person => person.Id,
+    pet => pet.OwnerId,
+    (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
+);
+```
+
+### 3. Optimized Join Syntax Returning Pair<>
+
+```csharp
+var joined = people.Join<Pet, int>(
+    person => person.Id,
+    pet => pet.OwnerId
+);
+// Use .Select to project from Pair<Person, Pet>
+var projected = joined.Select(x => new PersonPet { PersonName = x.Left.Name, PetName = x.Right.Name });
+```
+
+### 4. Multiple Joins (Chaining)
+```csharp
+var orders = new SqlQuery<Order>(provider);
+var query = orders
+    .Join<Customer, int>(o => o.CustomerId, c => c.Id)
+    .Join<Product, int>(oc => oc.Left.ProductId, p => p.Id)
+    .Select(x => new OrderInfo {
+        CustomerName = x.Left.Right.Name, // x.Left is Pair<Order, Customer>
+        ProductName = x.Right.Name
+    });
+```
+
 ## SQL Generation
 To get the SQL and parameters for a query:
 ```csharp
@@ -72,6 +119,18 @@ var (deleteSql, deleteParams) = query.ToDeleteSql(x => x.Id == 1);
 // Delete by entity instance (key fields)
 var (deleteSql2, deleteParams2) = query.ToDeleteSql(new Person { Id = 1 });
 // connection.Execute(deleteSql2, deleteParams2);
+
+// Join example
+var people = new SqlQuery<Person>(provider);
+var pets = new SqlQuery<Pet>(provider);
+var joinQuery = people.Join(
+    pets,
+    person => person.Id,
+    pet => pet.OwnerId,
+    (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
+);
+var (joinSql, joinParams) = joinQuery.ToSql();
+// connection.Query<PersonPet>(joinSql, joinParams);
 ```
 
 ## Notes
