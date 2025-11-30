@@ -36,7 +36,7 @@ var joined = people.Join(
 );
 ```
 
-### 2. Join Overload Without Explicit Inner Query
+### 2. Join Without Explicit Inner Query
 ```csharp
 var joined = people.Join<Pet, int, PersonPet>(
     person => person.Id,
@@ -45,7 +45,7 @@ var joined = people.Join<Pet, int, PersonPet>(
 );
 ```
 
-### 3. Optimized Join Syntax Returning Pair<>
+### 3. Optimized Join Syntax Returning Pair<Left,Right>
 
 ```csharp
 var joined = people.Join<Pet, int>(
