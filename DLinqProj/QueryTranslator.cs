@@ -174,7 +174,7 @@ namespace DLinq
             Type entityType = null;
 
             // Declare columns here so it can be set by projection
-            List<string> columns = null;
+            List<Column> columns = null;
             var primaryKeys = new List<string>();
 
             Expression current = expression;
@@ -221,7 +221,7 @@ namespace DLinq
             // Try to infer entityType if not set by Where
             if (entityType == null && current != null)
             {
-                var type = current.Type;
+                var type = current.GetType();
                 if (type.IsGenericType)
                 {
                     if (type.GetGenericTypeDefinition() == typeof(SqlQuery<>))
@@ -240,23 +240,33 @@ namespace DLinq
                 entityType = expression.Type.GetGenericArguments().FirstOrDefault();
             }
 
+            if (entityType != null && entityType.IsGenericType && entityType.GetGenericTypeDefinition().Name == "Pair`2")
+            {
+                var leftType = entityType.GetGenericArguments()[0];
+                entityType = leftType;
+                // Optionally: record rightType for join validation
+            }
+
             if (entityType == null)
             {
                 throw new InvalidOperationException("Unable to determine entity type for SQL translation. Ensure your query targets a valid entity type.");
             }
 
+            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
+            var tableName = tableAttr?.Name ?? entityType.Name;
+
             // Only build columns from entityType if not set by projection
             if (columns == null)
             {
                 var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-                columns = new List<string>();
+                columns = new List<Column>();
                 foreach (var prop in properties)
                 {
                     if (prop.GetCustomAttribute<NotMappedAttribute>() != null)
                         continue;
                     var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
                     var colName = colAttr?.Name ?? prop.Name;
-                    columns.Add(colName);
+                    columns.Add(new Column(null, tableName, colName));
                     if (prop.GetCustomAttribute<KeyAttribute>() != null)
                         primaryKeys.Add(colName);
                 }
@@ -266,9 +276,7 @@ namespace DLinq
                 // If columns are set by projection, primaryKeys is not relevant for the select
                 primaryKeys = new List<string>();
             }
-
-            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
-            var tableName = tableAttr?.Name ?? entityType.Name;
+ 
             ast = new SqlSelectNode
             {
                 Table = tableName,
@@ -421,9 +429,9 @@ namespace DLinq
         /// <param name="entity">Entity object to insert.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string and parameters object.</returns>
-        public (string sql, object parameters) GenerateInsertSql(object entity, Options? options = null)
+        public (string sql, object parameters) GenerateInsertSql(object entity, InsertOptions? options = null)
         {
-            options ??= new Options();
+            options ??= new InsertOptions();
             var entityType = entity.GetType();
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? tableAttr?.Name ?? entityType.Name;
@@ -454,7 +462,11 @@ namespace DLinq
             {
                 var selectColumns = properties
                     .Where(p => p.GetCustomAttribute<NotMappedAttribute>() == null)
-                    .Select(p => p.GetCustomAttribute<ColumnAttribute>()?.Name ?? p.Name)
+                    .Select(p => {
+                        var colAttr = p.GetCustomAttribute<ColumnAttribute>();
+                        var colName = colAttr?.Name ?? p.Name;
+                        return new Column(null, tableName, colName);
+                    })
                     .ToList();
                 var selectAst = new SqlSelectNode
                 {
@@ -487,9 +499,9 @@ namespace DLinq
         /// <param name="entity">Entity object to update.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string and parameters object.</returns>
-        public (string sql, object parameters) GenerateUpdateSql(object entity, Options? options = null)
+        public (string sql, object parameters) GenerateUpdateSql(object entity, UpdateOptions? options = null)
         {
-            options ??= new Options();
+            options ??= new UpdateOptions();
             var entityType = entity.GetType();
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? tableAttr?.Name ?? entityType.Name;
@@ -530,9 +542,9 @@ namespace DLinq
         /// <param name="wherePredicate">Custom predicate expression for WHERE clause.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string and parameters object.</returns>
-        public (string sql, object parameters) GenerateUpdateSql(object entity, Expression wherePredicate, Options? options = null)
+        public (string sql, object parameters) GenerateUpdateSql(object entity, Expression wherePredicate, UpdateOptions? options = null)
         {
-            options ??= new Options();
+            options ??= new UpdateOptions();
             var entityType = entity.GetType();
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? tableAttr?.Name ?? entityType.Name;
@@ -589,51 +601,55 @@ namespace DLinq
             Type entityType,
             Expression wherePredicate,
             Options? options = null,
-            object? keyValues = null)
+            Dictionary<string,object>? keyValues = null)
         {
             options ??= new Options();
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? tableAttr?.Name ?? entityType.Name;
-            Dictionary<string, object> whereDict = new();
-            List<string> whereParts = new();
-            int paramIndex = 0;
+            var parameters = new List<object>();
+            string whereSql = null;
 
-            // If keyValues is provided, use it to build the WHERE clause
-            if (keyValues != null)
+            if (wherePredicate != null)
             {
-                if (keyValues is IDictionary<string, object> dict)
-                {
-                    foreach (var kvp in dict)
-                    {
-                        whereDict[kvp.Key] = kvp.Value;
-                        whereParts.Add($"{_dialect.FormatColumn(kvp.Key)} = @{kvp.Key}");
-                    }
-                }
-                else
-                {
-                    var keyValueType = keyValues.GetType();
-                    foreach (var prop in keyValueType.GetProperties())
-                    {
-                        var value = prop.GetValue(keyValues);
-                        whereDict[prop.Name] = value;
-                        whereParts.Add($"{_dialect.FormatColumn(prop.Name)} = @{prop.Name}");
-                    }
-                }
-            }
-            // If a predicate is provided, use it
-            else if (wherePredicate != null)
+                // Use the same predicate parser as SELECT
+                whereSql = ParsePredicate(wherePredicate, parameters, entityType);
+            }else if (keyValues != null)
             {
-                BuildWhereFromPredicate(wherePredicate, entityType, whereDict, whereParts, ref paramIndex, _dialect);
+                var whereDict = new Dictionary<string, object>();
+                var whereParts = new List<string>();
+                int paramIndex = 0;
+                BuildWhereFromKeyValues(keyValues, entityType, whereDict, whereParts, ref paramIndex, _dialect);
+                whereSql = string.Join(" AND ", whereParts);
+                parameters.AddRange(whereDict.Values);
             }
 
-            string whereClause = whereParts.Count > 0 ? string.Join(" AND ", whereParts) : null;
-            var sql = _dialect.DeleteStatement(tableName, whereDict);
-            if (!string.IsNullOrEmpty(whereClause) && !sql.Contains("WHERE", StringComparison.OrdinalIgnoreCase))
+            var sql = _dialect.DeleteStatement(tableName, new { }); // pass empty object or null
+            if (!string.IsNullOrEmpty(whereSql))
             {
-                sql += $" WHERE {whereClause}";
+                sql += $" WHERE {whereSql}";
             }
-            var parameters = ToAnonymousObject(whereDict.ToDictionary(kvp => "@" + kvp.Key, kvp => kvp.Value));
-            return (sql, parameters);
+            var paramObj = ToAnonymousObject(parameters
+                .Select((v, i) => new KeyValuePair<string, object>($"@p{i}", v))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
+            return (sql, paramObj);
+        }
+
+        private void BuildWhereFromKeyValues(Dictionary<string, object> keyValues, Type entityType, Dictionary<string, object> whereDict, List<string> whereParts, ref int paramIndex, ISqlDialect dialect)
+        {
+            var keyProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.GetCustomAttribute<KeyAttribute>() != null)
+                .ToList();
+            foreach (var keyProp in keyProps)
+            {
+                var colAttr = keyProp.GetCustomAttribute<ColumnAttribute>();
+                var colName = colAttr?.Name ?? keyProp.Name;
+                if (keyValues.TryGetValue(keyProp.Name, out var value))
+                {
+                    string paramName = colName;
+                    whereDict[paramName] = value;
+                    whereParts.Add($"{dialect.FormatColumn(colName)} = @{paramName}");
+                }
+            }
         }
 
         // Shared predicate logic for building WHERE clause dictionary and SQL parts
@@ -683,6 +699,18 @@ namespace DLinq
             return obj;
         }
 
+        public static Dictionary<string, object?> ObjectToDictionary(object obj)
+        {
+            if (obj == null) throw new ArgumentNullException(nameof(obj));
+            var dict = new Dictionary<string, object?>();
+            var type = obj.GetType();
+            foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                dict[prop.Name] = prop.GetValue(obj);
+            }
+            return dict;
+        }
+
         /// <summary>
         /// Generates an INSERT SQL statement for the given entity object.
         /// Skips properties marked as NotMapped, Identity, or Computed.
@@ -690,9 +718,9 @@ namespace DLinq
         /// <param name="entity">Entity object to insert.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string, parameters object, and key info for SELECT-after-mutation.</returns>
-        public (string sql, object parameters, List<(string colName, object? value, bool isIdentity)> keyInfo) GenerateInsertSqlWithKeyInfo(object entity, Options? options = null)
+        public (string sql, object parameters, List<(string colName, object? value, bool isIdentity)> keyInfo) GenerateInsertSqlWithKeyInfo(object entity, InsertOptions? options = null)
         {
-            options ??= new Options();
+            options ??= new InsertOptions();
             var entityType = entity.GetType();
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? tableAttr?.Name ?? entityType.Name;
@@ -715,7 +743,7 @@ namespace DLinq
                 if (dbGenAttr != null && (dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Identity || dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Computed))
                     continue;
                 var paramName = "@" + colName;
-                columns.Add(_dialect.FormatColumn(colName));
+                columns.Add(colName);
                 paramNames.Add(paramName);
                 paramDict[paramName] = prop.GetValue(entity);
             }
@@ -749,23 +777,37 @@ namespace DLinq
             return keyInfo;
         }
 
-        private static List<string> ParseProjectionColumns(Expression body, ISqlDialect dialect)
+        private static List<Column> ParseProjectionColumns(Expression body, ISqlDialect dialect)
         {
-            var columns = new List<string>();
+            var columns = new List<Column>();
             if (body is MemberInitExpression memberInit)
             {
                 foreach (var binding in memberInit.Bindings)
                 {
                     if (binding is MemberAssignment assignment)
                     {
-                        // Only handle direct member access for now
+                        // Handle Pair<TLeft, TRight> property access
                         if (assignment.Expression is MemberExpression memberExpr)
                         {
-                            // Try to get table and column name
-                            var tableName = memberExpr.Expression.Type.Name;
-                            var columnName = memberExpr.Member.Name;
-                            var alias = assignment.Member.Name;
-                            columns.Add($"{dialect.FormatTable(tableName)}.{dialect.FormatColumn(columnName)} AS {dialect.FormatColumn(alias)}");
+                            // Check for x.Left.Prop or x.Right.Prop
+                            if (memberExpr.Expression is MemberExpression pairExpr &&
+                                (pairExpr.Member.Name == "Left" || pairExpr.Member.Name == "Right"))
+                            {
+                                var side = pairExpr.Member.Name; // "Left" or "Right"
+                                var tableType = pairExpr.Type;
+                                var tableName = tableType.Name;
+                                var columnName = memberExpr.Member.Name;
+                                var alias = assignment.Member.Name;
+                                columns.Add(new Column(null, tableName, columnName, alias));
+                            }
+                            else
+                            {
+                                // Fallback: direct member access
+                                var tableName = memberExpr.Expression?.Type.Name ?? "";
+                                var columnName = memberExpr.Member.Name;
+                                var alias = assignment.Member.Name;
+                                columns.Add(new Column(null, tableName, columnName, alias));
+                            }
                         }
                         // Optionally: handle nested MemberInit for more complex projections
                     }

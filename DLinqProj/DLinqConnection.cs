@@ -8,6 +8,7 @@ using Microsoft.Data.SqlClient;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using Dapper;
+using System.Diagnostics;
 
 namespace DLinq
 {
@@ -201,7 +202,7 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
-        public virtual T? Insert<T>(T entity, Options? options = null)
+        public virtual T? Insert<T>(T entity, InsertOptions? options = null)
         {
             Open();
             try
@@ -223,7 +224,7 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
-        public virtual async Task<T?> InsertAsync<T>(T entity, Options? options = null)
+        public virtual async Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null)
         {
             Open();
             try
@@ -245,7 +246,7 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
-        public virtual R? Insert<T, R>(T entity, Options? options = null)
+        public virtual R? Insert<T, R>(T entity, InsertOptions? options = null)
         {
             Open();
             try
@@ -266,7 +267,7 @@ namespace DLinq
         /// <summary>
         /// Inserts an entity of type T into the database. If Option.SelectAfterMutation is true, returns the inserted entity.
         /// </summary>
-        public virtual async Task<R?> InsertAsync<T, R>(T entity, Options? options = null)
+        public virtual async Task<R?> InsertAsync<T, R>(T entity, InsertOptions? options = null)
         {
             Open();
             try
@@ -288,7 +289,7 @@ namespace DLinq
         /// <summary>
         /// Updates an entity of type T in the database. If Option.SelectAfterMutation is true, returns the updated entity.
         /// </summary>
-        public virtual T? Update<T>(T entity, Options? options = null)
+        public virtual T? Update<T>(T entity, UpdateOptions? options = null)
         {
             Open();
             try
@@ -307,7 +308,7 @@ namespace DLinq
             }
         }
 
-        public virtual async Task<T?> UpdateAsync<T>(T entity, Options? options = null)
+        public virtual async Task<T?> UpdateAsync<T>(T entity, UpdateOptions? options = null)
         {
             Open();
             try
@@ -337,6 +338,7 @@ namespace DLinq
                 // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
                 var query = Select<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
+                Debug.WriteLine(sql);
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -373,6 +375,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
+                Debug.WriteLine(sql);
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }
             finally

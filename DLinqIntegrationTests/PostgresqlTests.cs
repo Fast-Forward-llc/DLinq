@@ -13,7 +13,7 @@ namespace DLinqIntegrationTests
 
         public PostgresqlTests()
         {
-            var connection = new NpgsqlConnection("Host=localhost;Port=5432;Database=DLinq;Username=postgres-user-name;Password=your-password-here;");
+            var connection = new NpgsqlConnection("Host=localhost;Port=5432;Database=DLinq;Username=postgres;Password=!Qwertyui0;");
             var dialect = new PostgresDialect(PostgresDialect.DialectOptions.ForceLowerCase);
             var dapperProvider = new DapperProvider(connection);
             dlinq = new DLinqConnection(connection, dialect, dapperProvider);
@@ -23,7 +23,7 @@ namespace DLinqIntegrationTests
         public void InsertPerson_Success()
         {
             var person = new Person { FirstName = "Joe", LastName = "Smith", Age = 25 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.AreEqual(person.FirstName, inserted.FirstName);
@@ -37,7 +37,7 @@ namespace DLinqIntegrationTests
         public void InsertPersonLocalDate_Success()
         {
             var person = new Person { FirstName = "Joey", LastName = "Smithson", Age = 25, CreateDateUTC = DateTime.Now };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.AreEqual(person.FirstName, inserted.FirstName);
@@ -51,7 +51,7 @@ namespace DLinqIntegrationTests
         public void UpdatePerson_Success()
         {
             var person = new Person { FirstName = "Jane", LastName = "Doe", Age = 30 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -71,7 +71,7 @@ namespace DLinqIntegrationTests
         public void GetByIdPerson_Success()
         {
             var person = new Person { FirstName = "Alice", LastName = "Johnson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -88,7 +88,7 @@ namespace DLinqIntegrationTests
         public void DeletePerson_Success()
         {
             var person = new Person { FirstName = "Bobby", LastName = "Thompson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -101,7 +101,7 @@ namespace DLinqIntegrationTests
         public void DeletePersonLinq_Success()
         {
             var person = new Person { FirstName = "Bobby", LastName = "Thompson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -115,7 +115,7 @@ namespace DLinqIntegrationTests
         public void InsertAndUpdateInTransaction_Success()
         {
             var person = new Person { FirstName = "Trans", LastName = "Action", Age = 40 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             Person inserted = null;
             Person updated = null;
 
@@ -150,7 +150,7 @@ namespace DLinqIntegrationTests
         public void TransactionRollback_RevertsChanges()
         {
             var person = new Person { FirstName = "Rollback", LastName = "Test", Age = 50 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             Person inserted = null;
             Person updated = null;
             int? personId = null;

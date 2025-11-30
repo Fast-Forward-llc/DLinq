@@ -27,12 +27,12 @@ namespace DLinqTests
                 return $"DELETE FROM {tableName}";
             }
 
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.Options options)
+            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options)
             {
                 return $"INSERT INTO {tableName}";
             }
 
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.Options options, List<(string colName, object value)> primaryKeys)
+            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys)
             {
                 return $"UPDATE {options?.TableName ?? tableName}";
             }

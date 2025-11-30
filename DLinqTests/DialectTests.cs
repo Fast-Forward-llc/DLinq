@@ -34,22 +34,30 @@ namespace DLinqTests
         [TestMethod]
         public void SelectStatement_BasicSelect()
         {
-            var ast = new SqlSelectNode { Table = "T", Columns = new List<string> { "A", "B" } };
+            var ast = new SqlSelectNode
+            {
+                Table = "T",
+                Columns = new List<Column>
+                {
+                    new Column(null, "T", "A"),
+                    new Column(null, "T", "B")
+                }
+            };
             var sql = dialect.SelectStatement(ast, new List<object>());
-            StringAssert.StartsWith(sql, "SELECT [A], [B] FROM [T]");
+            StringAssert.StartsWith(sql, "SELECT [T].[A], [T].[B] FROM [T]");
         }
 
         [TestMethod]
         public void InsertStatement_BasicInsert()
         {
-            var sql = dialect.InsertStatement("T", new List<string> { "A", "B" }, new List<string> { "@A", "@B" }, new DLinq.Options());
+            var sql = dialect.InsertStatement("T", new List<string> { "A", "B" }, new List<string> { "@A", "@B" }, new DLinq.InsertOptions());
             Assert.AreEqual("INSERT INTO [T] ([A], [B]) VALUES (@A, @B)", sql);
         }
 
         [TestMethod]
         public void UpdateStatement_BasicUpdate()
         {
-            var sql = dialect.UpdateStatement("T", new { A = 1, C = "Qwerty" }, new { B = 2 }, new DLinq.Options(), new List<(string, object)>());
+            var sql = dialect.UpdateStatement("T", new { A = 1, C = "Qwerty" }, new { B = 2 }, new DLinq.UpdateOptions(), new List<(string, object)>());
             Assert.AreEqual("UPDATE [T] SET [A] = @A, [C] = @C WHERE [B] = @B", sql);
         }
 
@@ -90,22 +98,30 @@ namespace DLinqTests
         [TestMethod]
         public void SelectStatement_BasicSelect()
         {
-            var ast = new SqlSelectNode { Table = "T", Columns = new List<string> { "A", "B" } };
+            var ast = new SqlSelectNode
+            {
+                Table = "T",
+                Columns = new List<Column>
+                {
+                    new Column(null, "T", "A"),
+                    new Column(null, "T", "B")
+                }
+            };
             var sql = dialect.SelectStatement(ast, new List<object>());
-            StringAssert.StartsWith(sql, "SELECT \"A\", \"B\" FROM \"T\"");
+            StringAssert.StartsWith(sql, "SELECT \"T\".\"A\", \"T\".\"B\" FROM \"T\"");
         }
 
         [TestMethod]
         public void InsertStatement_BasicInsert()
         {
-            var sql = dialect.InsertStatement("T", new List<string> { "A", "B" }, new List<string> { "@A", "@B" }, new DLinq.Options());
+            var sql = dialect.InsertStatement("T", new List<string> { "A", "B" }, new List<string> { "@A", "@B" }, new DLinq.InsertOptions());
             Assert.AreEqual("INSERT INTO \"T\" (\"A\", \"B\") VALUES (@A, @B)", sql);
         }
 
         [TestMethod]
         public void UpdateStatement_BasicUpdate()
         {
-            var sql = dialect.UpdateStatement("T", new { A = 1, C = "Qwerty" }, new { B = 2 }, new DLinq.Options(), new List<(string, object)>());
+            var sql = dialect.UpdateStatement("T", new { A = 1, C = "Qwerty" }, new { B = 2 }, new DLinq.UpdateOptions(), new List<(string, object)>());
             Assert.AreEqual("UPDATE \"T\" SET \"A\" = @A, \"C\" = @C WHERE \"B\" = @B", sql);
         }
 

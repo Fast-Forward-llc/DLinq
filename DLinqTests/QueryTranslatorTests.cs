@@ -23,7 +23,7 @@ namespace DLinqTests
             var dialect = new DummyDialect();
             var translator = new QueryTranslator(dialect);
             var entity = new { Id = 1, Name = "Test" };
-            var options = new DLinq.Options { TableName = "CustomTable" };
+            var options = new DLinq.InsertOptions { TableName = "CustomTable" };
             var result = translator.GenerateInsertSql(entity, options);
             // Should use options.TableName
             Assert.IsTrue(result.sql.Contains("CustomTable"));
@@ -35,7 +35,7 @@ namespace DLinqTests
             var dialect = new DummyDialect();
             var translator = new QueryTranslator(dialect);
             var entity = new { Id = 1, Name = "Test" };
-            var options = new DLinq.Options { TableName = "CustomTable" };
+            var options = new DLinq.UpdateOptions { TableName = "CustomTable" };
             var result = translator.GenerateUpdateSql(entity, options);
             Assert.IsTrue(result.sql.Contains("CustomTable"));
         }
@@ -56,11 +56,11 @@ namespace DLinqTests
             public string FormatColumn(string columnName) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.Options options)
+            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options)
             {
                 return $"INSERT INTO {tableName}";
             }
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.Options options, List<(string colName, object value)> primaryKeys)
+            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys)
             {
                 return $"UPDATE {options?.TableName ?? tableName}";
             }

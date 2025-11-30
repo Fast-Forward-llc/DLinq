@@ -26,10 +26,10 @@ namespace DLinq
         T? GetById<T>(object keyValues);
         Task<T?> GetByIdAsync<T, TKey>(TKey key);
         Task<T?> GetByIdAsync<T>(object keyValues);
-        R? Insert<T, R>(T entity, Options? options = null);
-        T? Insert<T>(T entity, Options? options = null);
-        Task<R?> InsertAsync<T, R>(T entity, Options? options = null);
-        Task<T?> InsertAsync<T>(T entity, Options? options = null);
+        R? Insert<T, R>(T entity, InsertOptions? options = null);
+        T? Insert<T>(T entity, InsertOptions? options = null);
+        Task<R?> InsertAsync<T, R>(T entity, InsertOptions? options = null);
+        Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null);
         void Open();
         SqlQuery<T> Query<T>();
         IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate);
@@ -38,7 +38,7 @@ namespace DLinq
         Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery);
         void Rollback();
         SqlQuery<T> Select<T>();
-        T? Update<T>(T entity, Options? options = null);
-        Task<T?> UpdateAsync<T>(T entity, Options? options = null);
+        T? Update<T>(T entity, UpdateOptions? options = null);
+        Task<T?> UpdateAsync<T>(T entity, UpdateOptions? options = null);
     }
 }

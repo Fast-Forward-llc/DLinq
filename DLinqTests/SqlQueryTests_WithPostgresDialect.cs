@@ -42,6 +42,31 @@ namespace DLinqTests
             public Pet Pet { get; set; }
         }
 
+        private class Order
+        {
+            public int Id { get; set; }
+            public int CustomerId { get; set; }
+            public int ProductId { get; set; }
+        }
+
+        private class Customer
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        private class Product
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        private class OrderInfo
+        {
+            public string CustomerName { get; set; }
+            public string ProductName { get; set; }
+        }
+
         [TestMethod]
         public void Where_GeneratesSql()
         {
@@ -61,6 +86,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider).OrderBy(x => x.Name);
             var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("SELECT"));
         }
 
@@ -70,6 +96,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider).Skip(5).Take(10);
             var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("SELECT"));
         }
 
@@ -79,6 +106,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider);
             var (sql, parameters) = query.ToInsertSql(new Person { Name = "Test", Age = 20 });
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.StartsWith("INSERT INTO"));
         }
 
@@ -88,6 +116,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider);
             var (sql, parameters) = query.ToUpdateSql(new Person { Id = 1, Name = "Test", Age = 21 });
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.StartsWith("UPDATE"));
         }
 
@@ -97,6 +126,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider);
             var (sql, parameters) = query.ToDeleteSql(x => x.Id == 1);
+            Console.WriteLine(sql);
             Assert.IsTrue(sql.StartsWith("DELETE FROM"));
         }
 
@@ -105,6 +135,7 @@ namespace DLinqTests
         {
             var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
             var (sql, parameters) = query.ToInsertSql(new TestEntity { Id = 1, Name = "abc" });
+            Console.WriteLine(sql);
             StringAssert.Contains(sql, "INSERT INTO \"DummyTable\"");
             StringAssert.Contains(sql, "\"Id\"");
             StringAssert.Contains(sql, "\"Name\"");
@@ -119,6 +150,7 @@ namespace DLinqTests
         {
             var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
             var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" });
+            Console.WriteLine(sql);
             StringAssert.Contains(sql, "UPDATE \"DummyTable\"");
             StringAssert.Contains(sql, "SET \"Name\" = @Name");
             StringAssert.Contains(sql, "WHERE \"Id\" = @Id");
@@ -133,11 +165,25 @@ namespace DLinqTests
         {
             var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
             var (sql, parameters) = query.ToDeleteSql(x => x.Id == 1);
+            Console.WriteLine(sql);
             StringAssert.Contains(sql, "DELETE FROM \"DummyTable\"");
-            StringAssert.Contains(sql, "WHERE \"Id\" = @Id");
+            StringAssert.Contains(sql, "WHERE \"Id\" = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual(1, paramDict["@p0"]);
+        }
+
+        [TestMethod]
+        public void ToDeleteSql_GeneratesFullSql_WithGtPredicate()
+        {
+            var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
+            var (sql, parameters) = query.ToDeleteSql(x => x.Id > 1);
+            Console.WriteLine(sql);
+            StringAssert.Contains(sql, "DELETE FROM \"DummyTable\"");
+            StringAssert.Contains(sql, "WHERE \"Id\" > @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
         }
 
         [Table("DummyTable")]
@@ -149,7 +195,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_MethodChaining_GeneratesSql()
+        public void Join_MethodChaining_LinqSyntax_GeneratesSql()
         {
             var provider = GetProvider();
             var people = new SqlQuery<Person>(provider);
@@ -169,7 +215,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_WithWhere_GeneratesSql()
+        public void Join_LinqSyntax_WithWhere_GeneratesSql()
         {
             var provider = GetProvider();
             var people = new SqlQuery<Person>(provider);
@@ -208,7 +254,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void ToSql_InnerJoin_GeneratesCorrectSql()
+        public void ToSql_InnerJoin_LinqStyle_GeneratesCorrectSql()
         {
             var provider = GetProvider();
             var employees = new SqlQuery<Employee>(provider);
@@ -234,7 +280,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_OverloadWithoutInnerQuery_GeneratesSql()
+        public void Join_LinqStyleWithoutInnerQuery_GeneratesSql()
         {
             var provider = GetProvider();
             var people = new SqlQuery<Person>(provider);
@@ -252,7 +298,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_OverloadWithoutInnerQuery_WithWhere_GeneratesSql()
+        public void Join_LinqStyleWithoutInnerQuery_WithWhere_GeneratesSql()
         {
             var targetName = "Alice";
             var provider = GetProvider();
@@ -270,6 +316,72 @@ namespace DLinqTests
             Assert.AreEqual("Alice", paramDict["p0"]);
         }
 
-        
+        [TestMethod]
+        public void Join_OptimizedSyntax_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var people = new SqlQuery<Person>(provider);
+            // Use the new overload that returns Pair<Person, Pet>
+            var joined = people.Join<Pet, int>(
+                person => person.Id,
+                pet => pet.OwnerId
+            );
+            var (sql, parameters) = joined.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
+            Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
+            Assert.IsTrue(sql.Contains("Pet") || sql.Contains("pet"));
+        }
+
+        [TestMethod]
+        public void Join_OptimizedSyntax_WithWhereAndSelect_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var people = new SqlQuery<Person>(provider);
+            var joined = people.Join<Pet, int>(
+                person => person.Id,
+                pet => pet.OwnerId
+            )
+            .Where(x => x.Left.Name == "Alice")
+            .Select(x => new PersonPet { PersonName = x.Left.Name, PetName = x.Right.Name });
+            var (sql, parameters) = joined.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("PersonName"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Alice", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void MultipleJoins_OptimizedSyntax_GeneratesCorrectSql()
+        {
+            var provider = GetProvider();
+            var orders = new SqlQuery<Order>(provider);
+            // First join: Order + Customer => Pair<Order, Customer>
+            var orderCustomer = orders.Join<Customer, int>(
+                o => o.CustomerId,
+                c => c.Id
+            );
+            // Second join: Pair<Order, Customer> + Product => Pair<Pair<Order, Customer>, Product>
+            var orderCustomerProduct = orderCustomer.Join<Product, int>(
+                oc => oc.Left.ProductId,
+                p => p.Id
+            );
+            // Select projection from the nested pair
+            var query = orderCustomerProduct.Select(x => new OrderInfo
+            {
+                CustomerName = x.Left.Right.Name, // x.Left is Pair<Order, Customer>, x.Left.Right is Customer
+                ProductName = x.Right.Name
+            });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("JOIN", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("Order", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("Customer", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("Product", StringComparison.OrdinalIgnoreCase));
+            Assert.IsTrue(sql.Contains("CustomerName", StringComparison.OrdinalIgnoreCase) || sql.Contains("ProductName", StringComparison.OrdinalIgnoreCase));
+        }
+
+
     }
 }

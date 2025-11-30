@@ -15,8 +15,8 @@ namespace DLinqTests
             Assert.AreEqual("C", dialect.FormatColumn("C"));
             Assert.AreEqual("@p0", dialect.ParameterPlaceholder(0));
             Assert.AreEqual("SELECT", dialect.SelectStatement(new SqlSelectNode(), new List<object>()));
-            Assert.AreEqual("INSERT", dialect.InsertStatement("T", new List<string>(), new List<string>(), new DLinq.Options()));
-            Assert.AreEqual("UPDATE", dialect.UpdateStatement("T", new { A = 1 }, new { B = 2 }, new DLinq.Options(), new List<(string, object)>()));
+            Assert.AreEqual("INSERT", dialect.InsertStatement("T", new List<string>(), new List<string>(), new DLinq.InsertOptions()));
+            Assert.AreEqual("UPDATE", dialect.UpdateStatement("T", new { A = 1 }, new { B = 2 }, new DLinq.UpdateOptions(), new List<(string, object)>()));
             Assert.AreEqual("DELETE", dialect.DeleteStatement("T", new { A = 1 }));
             Assert.AreEqual("<identity>", dialect.IdentityValueExpression("T", "Id"));
         }
@@ -27,8 +27,8 @@ namespace DLinqTests
             public string FormatColumn(string columnName) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.Options options) => "INSERT";
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.Options options, List<(string colName, object value)> primaryKeys) => "UPDATE";
+            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options) => "INSERT";
+            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys) => "UPDATE";
             public string DeleteStatement(string tableName, object whereValues) => "DELETE";
             public string IdentityValueExpression(string tableName, string columnName)
             {

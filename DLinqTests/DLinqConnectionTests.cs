@@ -109,7 +109,7 @@ namespace DLinqTests
             var entity = new SingleKeyEntity { Id = 1, Name = "Test" };
             mockDapperProvider.Setup(d => d.QuerySingleOrDefault<SingleKeyEntity>(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<IDbTransaction>())).Returns(entity);
             var conn = new DLinqConnection(mockConn.Object, mockDialect.Object, mockDapperProvider.Object);
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var result = conn.Insert(entity, options);
             Assert.AreEqual(entity, result);
         }
@@ -123,7 +123,7 @@ namespace DLinqTests
             var entity = new SingleKeyEntity { Id = 2, Name = "Updated" };
             mockDapperProvider.Setup(d => d.QuerySingleOrDefault<SingleKeyEntity>(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<IDbTransaction>())).Returns(entity);
             var conn = new DLinqConnection(mockConn.Object, mockDialect.Object, mockDapperProvider.Object);
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.UpdateOptions { SelectAfterMutation = true };
             var result = conn.Update(entity, options);
             Assert.AreEqual(entity, result);
         }
@@ -429,11 +429,11 @@ namespace DLinqTests
             public string FormatColumn(string columnName) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, System.Collections.Generic.List<object> parameters) => "SELECT";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.Options options)
+            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options)
             {
                 return $"INSERT INTO {tableName}";
             }
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.Options options, System.Collections.Generic.List<(string colName, object value)> primaryKeys) => "UPDATE";
+            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, System.Collections.Generic.List<(string colName, object value)> primaryKeys) => "UPDATE";
             public string DeleteStatement(string tableName, object whereValues) => "DELETE";
             public string IdentityValueExpression(string tableName, string columnName)
             {

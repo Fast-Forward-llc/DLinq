@@ -25,7 +25,7 @@ namespace DLinq
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         // Method to generate Insert SQL for the specified entity
-        public (string sql, object parameters) ToInsertSql(T entity, Options? options = null)
+        public (string sql, object parameters) ToInsertSql(T entity, InsertOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
@@ -34,7 +34,7 @@ namespace DLinq
             throw new NotSupportedException("ToInsertSql is only supported for SqlQuery using QueryProvider.");
         }
 
-        public (string sql, object parameters) ToInsertSql<R>(T entity, Options? options = null)
+        public (string sql, object parameters) ToInsertSql<R>(T entity, InsertOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
@@ -44,7 +44,7 @@ namespace DLinq
         }
 
         // Method to generate Update SQL for the specified entity
-        public (string sql, object parameters) ToUpdateSql(T entity, Options? options = null)
+        public (string sql, object parameters) ToUpdateSql(T entity, UpdateOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
@@ -54,7 +54,7 @@ namespace DLinq
         }
 
         // Method to generate Update SQL for the specified entity with a where predicate
-        public (string sql, object parameters) ToUpdateSql(T entity, Expression<Func<T, bool>> wherePredicate, Options? options = null)
+        public (string sql, object parameters) ToUpdateSql(T entity, Expression<Func<T, bool>> wherePredicate, UpdateOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
@@ -157,6 +157,46 @@ namespace DLinq
             return this.Join(inner, outerKeySelector, innerKeySelector, resultSelector);
         }
 
+        // New Join overload for property-style access (Pair<T, TJoin>)
+        public SqlQuery<Pair<T, TJoin>> Join<TJoin, TKey>(
+            Expression<Func<T, TKey>> outerKeySelector,
+            Expression<Func<TJoin, TKey>> innerKeySelector)
+        {
+            if (outerKeySelector == null) throw new ArgumentNullException(nameof(outerKeySelector));
+            if (innerKeySelector == null) throw new ArgumentNullException(nameof(innerKeySelector));
+            if (!(this.Provider is QueryProvider qp)) throw new InvalidOperationException("Provider must be a QueryProvider.");
+            var inner = new SqlQuery<TJoin>(qp);
+
+            // Build expression: (outer, innerParam) => new Pair<T, TJoin>(outer, innerParam)
+            var outerParam = Expression.Parameter(typeof(T), "outer");
+            var innerParam = Expression.Parameter(typeof(TJoin), "inner");
+
+            var pairType = typeof(Pair<,>).MakeGenericType(typeof(T), typeof(TJoin));
+            var ctor = pairType.GetConstructor(new[] { typeof(T), typeof(TJoin) });
+            Expression newPair;
+            if (ctor != null)
+            {
+                newPair = Expression.New(ctor, outerParam, innerParam);
+            }
+            else
+            {
+                // fallback to parameterless + member init if ctor not found
+                var newExpr = Expression.New(pairType);
+                var leftMember = pairType.GetProperty(nameof(Pair<T, TJoin>.Left));
+                var rightMember = pairType.GetProperty(nameof(Pair<T, TJoin>.Right));
+                var bindings = new List<MemberBinding>();
+                if (leftMember != null) bindings.Add(Expression.Bind(leftMember, outerParam));
+                if (rightMember != null) bindings.Add(Expression.Bind(rightMember, innerParam));
+                newPair = Expression.MemberInit(newExpr, bindings);
+            }
+            var selector = Expression.Lambda<Func<T, TJoin, Pair<T, TJoin>>>(newPair, outerParam, innerParam);
+
+            // Reuse existing Join overload that accepts a resultSelector
+            var joined = this.Join(inner, outerKeySelector, innerKeySelector, selector);
+
+            return (SqlQuery<Pair<T, TJoin>>)(object)joined;
+        }
+
         public SqlQuery<T> Where(Expression<Func<T, bool>> predicate)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
@@ -183,6 +223,20 @@ namespace DLinq
             );
 
             return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
+        }
+    }
+
+    // Helper type to expose the joined items as properties (x.Left / x.Right)
+    public class Pair<TLeft, TRight>
+    {
+        public TLeft Left { get; set; }
+        public TRight Right { get; set; }
+
+        public Pair() { }
+        public Pair(TLeft left, TRight right)
+        {
+            Left = left;
+            Right = right;
         }
     }
 }

@@ -8,15 +8,15 @@ namespace DLinq
     public class SqlSelectNode : SqlAstNode
     {
         public string Table { get; set; }
-        public List<string> Columns { get; set; } = new();
+        public List<Column> Columns { get; set; } = new List<Column>();
         public SqlWhereNode Where { get; set; }
-        public string WhereSql { get; set; } // Raw SQL predicate for complex expressions
-        public List<string> PrimaryKeys { get; set; } = new();
+        public string WhereSql { get; set; }
+        public List<string> PrimaryKeys { get; set; } = new List<string>();
         public int? Skip { get; set; }
         public int? Take { get; set; }
-        public SqlFunctionSource FromFunction { get; set; } // TVF support
-        public List<(string Column, bool Descending)> OrderBy { get; set; } = new(); // OrderBy support
-        public List<SqlJoinNode> Joins { get; set; } = new(); // Join support
+        public SqlFunctionSource FromFunction { get; set; }
+        public List<(string Column, bool Descending)> OrderBy { get; set; } = new List<(string, bool)>();
+        public List<SqlJoinNode> Joins { get; set; } = new List<SqlJoinNode>();
     }
 
     public class SqlJoinNode
@@ -48,5 +48,20 @@ namespace DLinq
         public string LeftColumn { get; set; }
         public string RightTable { get; set; }
         public string RightColumn { get; set; }
+    }
+
+    public class Column
+    {
+        public string? Schema { get; set; }
+        public string Table { get; set; }
+        public string Name { get; set; }
+        public string? Alias { get; set; }
+        public Column(string? schema, string table, string name, string? alias = null)
+        {
+            Schema = schema;
+            Table = table;
+            Name = name;
+            Alias = alias;
+        }
     }
 }

@@ -22,7 +22,7 @@ namespace DLinqIntegrationTests
         public void InsertPerson_Success()
         {
             var person = new DTOs.Person { FirstName = "Joe", LastName="Smith", Age = 25 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.AreEqual("Joe", inserted.FirstName);
@@ -37,7 +37,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to update
             var person = new DTOs.Person { FirstName = "Jane", LastName = "Doe", Age = 30 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -59,7 +59,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to ensure there is a record to retrieve
             var person = new DTOs.Person { FirstName = "Alice", LastName = "Johnson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -77,7 +77,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to ensure there is a record to retrieve
             var person = new DTOs.PersonCK { FirstName = "Alice", LastName = "James", Age = 38 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id == person.Id);
@@ -96,7 +96,7 @@ namespace DLinqIntegrationTests
         public void InsertPerson2_Success()
         {
             var person = new DTOs.Person2 { FirstName = "Joe", LastName = "Smith", Age = 25 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.AreEqual("Joe", inserted.FirstName);
@@ -111,7 +111,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to update
             var person = new DTOs.Person2 { FirstName = "Jane", LastName = "Doe", Age = 30 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -133,7 +133,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to update
             var person = new DTOs.Person { FirstName = "Janet", LastName = "Dough", Age = 31 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -160,7 +160,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to ensure there is a record to retrieve
             var person = new DTOs.Person2 { FirstName = "Alice", LastName = "Johnson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -178,7 +178,7 @@ namespace DLinqIntegrationTests
         public void InsertPersonUUID_Success()
         {
             var person = new DTOs.PersonUUID { FirstName = "Joe", LastName = "Smith", Age = 25 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.AreEqual("Joe", inserted.FirstName);
@@ -193,7 +193,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to update
             var person = new DTOs.PersonUUID { FirstName = "Jane", LastName = "Doe", Age = 30 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id == person.Id);
@@ -215,7 +215,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to ensure there is a record to retrieve
             var person = new DTOs.PersonUUID { FirstName = "Alice", LastName = "Johnson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id == person.Id);
@@ -233,7 +233,7 @@ namespace DLinqIntegrationTests
         public void InsertAndUpdateInTransaction_Success()
         {
             var person = new DTOs.Person { FirstName = "Trans", LastName = "Action", Age = 40 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             DTOs.Person inserted = null;
             DTOs.Person updated = null;
 
@@ -272,7 +272,7 @@ namespace DLinqIntegrationTests
         public void TransactionRollback_RevertsChanges()
         {
             var person = new DTOs.Person { FirstName = "Rollback", LastName = "Test", Age = 50 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             DTOs.Person inserted = null;
             DTOs.Person updated = null;
             int? personId = null;
@@ -320,7 +320,7 @@ namespace DLinqIntegrationTests
         {
             // Insert a person to ensure there is a record to retrieve
             var person = new DTOs.Person { FirstName = "Bobby", LastName = "Thompson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);
@@ -335,7 +335,7 @@ namespace DLinqIntegrationTests
         {
             //Insert a person to ensure there is a record to delete
             var person = new DTOs.Person { FirstName = "Bobby", LastName = "Thompson", Age = 28 };
-            var options = new DLinq.Options { SelectAfterMutation = true };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
             var inserted = dlinq.Insert(person, options);
             Assert.IsNotNull(inserted);
             Assert.IsTrue(inserted.Id > 0);

@@ -67,7 +67,20 @@ namespace DLinq
         {
             var sb = new StringBuilder();
             sb.Append("SELECT ");
-            sb.Append(string.Join(", ", ast.Columns.Count > 0 ? ast.Columns.ConvertAll(FormatColumn) : new[] { "*" }));
+            if (ast.Columns.Count > 0)
+            {
+                sb.Append(string.Join(", ", ast.Columns.Select(c =>
+                {
+                    var table = FormatTable(c.Table);
+                    var col = FormatColumn(c.Name);
+                    var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
+                    return $"{table}.{col}{alias}";
+                })));
+            }
+            else
+            {
+                sb.Append("*");
+            }
             sb.Append(" FROM ");
             if (ast.FromFunction != null)
             {
@@ -111,14 +124,14 @@ namespace DLinq
             return sb.ToString();
         }
 
-        public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, Options options)
+        public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, InsertOptions options)
         {
             var quotedColumns = columns.Select(col => FormatColumn(col));
             var sql = $"INSERT INTO {FormatTable(tableName)} ({string.Join(", ", quotedColumns)}) VALUES ({string.Join(", ", paramNames)})";
             return sql;
         }
 
-        public string UpdateStatement(string tableName, object setValues, object whereValues, Options options, List<(string colName, object value)> primaryKeys)
+        public string UpdateStatement(string tableName, object setValues, object whereValues, UpdateOptions options, List<(string colName, object value)> primaryKeys)
         {
             var setDict = setValues is IDictionary<string, object> dictSet ? dictSet : setValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(setValues));
             var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
