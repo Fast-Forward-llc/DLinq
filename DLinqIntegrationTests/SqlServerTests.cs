@@ -342,7 +342,18 @@ namespace DLinqIntegrationTests
 
             // Retrieve by Id
             var minId = inserted.Id;
-            var delCount = dlinq.Delete<Person>(p => p.Id > minId);
+            var delCount = dlinq.Delete<Person>(p => p.Id >= minId);
+            Assert.IsTrue(delCount > 0);
+        }
+        [TestMethod]
+        public void DeletePersonGt0_Success()
+        {
+            //Insert a person to ensure there is a record to delete
+            var person = new DTOs.Person { FirstName = "Delete", LastName = "Placeholder", Age = 108 };
+            dlinq.Insert(person);
+            var minId = 100;
+            // Retrieve by Id
+            var delCount = dlinq.Delete<Person>(p => p.Age >= minId);
             Assert.IsTrue(delCount > 0);
         }
 

@@ -639,6 +639,7 @@ namespace DLinq
             var keyProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(p => p.GetCustomAttribute<KeyAttribute>() != null)
                 .ToList();
+            var i = 0;
             foreach (var keyProp in keyProps)
             {
                 var colAttr = keyProp.GetCustomAttribute<ColumnAttribute>();
@@ -647,7 +648,7 @@ namespace DLinq
                 {
                     string paramName = colName;
                     whereDict[paramName] = value;
-                    whereParts.Add($"{dialect.FormatColumn(colName)} = @{paramName}");
+                    whereParts.Add($"{dialect.FormatColumn(colName)} = @p{i++}");
                 }
             }
         }
