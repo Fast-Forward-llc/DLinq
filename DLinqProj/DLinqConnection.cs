@@ -34,6 +34,9 @@ namespace DLinq
         public virtual IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
+            #if DEBUG_SQL
+            Console.WriteLine($"Executing query: {sql}");
+            #endif
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
@@ -41,12 +44,18 @@ namespace DLinq
         {
             var query = Select<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
         public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
@@ -54,12 +63,15 @@ namespace DLinq
         {
             var query = Select<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
         // Expose SqlQuery<T> for LINQ operations
         public virtual SqlQuery<T> Select<T>() => new SqlQuery<T>(_provider);
-        public virtual SqlQuery<T> Query<T>() => new SqlQuery<T>(_provider);
+        public virtual SqlQuery<T> QueryBuilder<T>() => new SqlQuery<T>(_provider);
 
         public virtual int TransactionDepth => _transactionDepth;
 
@@ -80,6 +92,9 @@ namespace DLinq
         public virtual T? GetById<T>(object keyValues)
         {
             var (sql, parameters) = GetByIdCore<T>(keyValues);
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             Open();
             try
             {
@@ -98,6 +113,9 @@ namespace DLinq
         public virtual async Task<T?> GetByIdAsync<T>(object keyValues)
         {
             var (sql, parameters) = GetByIdCore<T>(keyValues);
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             Open();
             try
             {
@@ -151,6 +169,9 @@ namespace DLinq
         public virtual T? GetById<T, TKey>(TKey key)
         {
             var (sql, parameters) = GetByIdCore<T, TKey>(key);
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             Open();
             try
             {
@@ -168,6 +189,9 @@ namespace DLinq
         public virtual async Task<T?> GetByIdAsync<T, TKey>(TKey key)
         {
             var (sql, parameters) = GetByIdCore<T, TKey>(key);
+            #if DEBUG_SQL
+                        Console.WriteLine($"Executing query: {sql}");
+            #endif
             Open();
             try
             {
@@ -208,6 +232,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToInsertSql(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -230,6 +257,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToInsertSql(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -252,6 +282,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToInsertSql<R>(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<R>(sql, parameters, GetCurrentTransaction()!);
@@ -273,6 +306,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToInsertSql<R>(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<R>(sql, parameters, GetCurrentTransaction()!);
@@ -295,6 +331,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToUpdateSql(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -314,6 +353,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToUpdateSql(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -338,7 +380,9 @@ namespace DLinq
                 // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
                 var query = Select<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
-                Debug.WriteLine(sql);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -358,6 +402,9 @@ namespace DLinq
                 // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
                 var query = Select<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -375,7 +422,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
-                Debug.WriteLine(sql);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -393,6 +442,9 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
+                #if DEBUG_SQL
+                            Console.WriteLine($"Executing query: {sql}");
+                #endif
                 return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
             }
             finally

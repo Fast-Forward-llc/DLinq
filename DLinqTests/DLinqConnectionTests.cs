@@ -296,8 +296,8 @@ namespace DLinqTests
                 .Returns(expected.Select(x => new AnonymousResult { PersonName = x.PersonName, PetName = x.PetName }));
 
             var conn = GetTestConnection();
-            var peopleQuery = conn.Query<Person>();
-            var petsQuery = conn.Query<Pet>();
+            var peopleQuery = conn.QueryBuilder<Person>();
+            var petsQuery = conn.QueryBuilder<Pet>();
 
             // Act
             var joinQuery = peopleQuery.Join(
@@ -342,7 +342,7 @@ namespace DLinqTests
                 .Returns(expected.Select(x => new AnonymousResult { PersonName = x.PersonName, PetName = x.PetName }));
 
             var conn = GetTestConnection();
-            var peopleQuery = conn.Query<Person>();
+            var peopleQuery = conn.QueryBuilder<Person>();
 
             // Act
             var joinQuery = peopleQuery.Join<Pet, int, AnonymousResult>(
@@ -387,7 +387,7 @@ namespace DLinqTests
                 .Returns(expected.Select(x => new AnonymousResult { PersonName = x.PersonName, PetName = x.PetName }));
 
             var conn = GetTestConnection();
-            var peopleQuery = conn.Query<Person>();
+            var peopleQuery = conn.QueryBuilder<Person>();
 
             // Act
             var result = peopleQuery
@@ -426,7 +426,7 @@ namespace DLinqTests
         private class UnsupportedDialect : ISqlDialect
         {
             public string FormatTable(string tableName) => tableName;
-            public string FormatColumn(string columnName) => columnName;
+            public string FormatColumn(string columnName, string? tableName = null) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, System.Collections.Generic.List<object> parameters) => "SELECT";
             public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options)

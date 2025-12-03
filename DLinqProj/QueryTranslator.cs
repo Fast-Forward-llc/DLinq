@@ -41,6 +41,37 @@ namespace DLinq
             return compiled.DynamicInvoke();
         }
 
+        private string GetEntityTableName(Type entityType)
+        {
+            if (entityType == null) return string.Empty;
+            if (entityType.Name == nameof(ConstantExpression)) return string.Empty;
+            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
+            var tableName = tableAttr?.Name ?? entityType.Name;
+            return tableName;
+        }
+
+        private Type GetEntityType(Type entityType)
+        {
+            if (entityType.IsGenericType)
+            {
+                if (entityType.GetGenericTypeDefinition() == typeof(SqlQuery<>))
+                {
+                    entityType = entityType.GetGenericArguments().FirstOrDefault();
+                }
+                else if (typeof(IQueryable).IsAssignableFrom(entityType))
+                {
+                    entityType = entityType.GetGenericArguments()[0];
+                }
+            }
+            var isJoinResultType = IsDerivedFromGenericType(entityType, typeof(JoinResult));
+            if (entityType != null && isJoinResultType)
+            {
+                var leftType = entityType.GetGenericArguments()[0];
+                entityType = GetEntityType(leftType);
+            }
+            return entityType;
+        }
+
         /// <summary>
         /// Parses a predicate expression (e.g., from a Where clause) into SQL syntax and collects parameters.
         /// Supports AND/OR, comparison, IN/NOT IN, and basic member access.
@@ -79,9 +110,10 @@ namespace DLinq
 
                 if (member != null && constantValue != null)
                 {
-                    var prop = entityType.GetProperty(member.Member.Name);
-                    var colAttr = prop?.GetCustomAttribute<ColumnAttribute>();
+                    //var prop = entityType.GetProperty(member.Member.Name);
+                    var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
                     var colName = colAttr?.Name ?? member.Member.Name;
+                    var colTableName = GetEntityTableName(member.Member.DeclaringType!);
                     string sqlOp = binary.NodeType switch
                     {
                         ExpressionType.Equal => "=",
@@ -93,7 +125,7 @@ namespace DLinq
                         _ => throw new NotSupportedException()
                     };
                     parameters.Add(constantValue);
-                    return $"{_dialect.FormatColumn(colName)} {sqlOp} {_dialect.ParameterPlaceholder(parameters.Count - 1)}";
+                    return $"{_dialect.FormatColumn(colName, colTableName)} {sqlOp} {_dialect.ParameterPlaceholder(parameters.Count - 1)}";
                 }
             }
             // IN/NOT IN support
@@ -110,16 +142,17 @@ namespace DLinq
                 if (member != null)
                 {
                     values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
-                    var prop = entityType.GetProperty(member.Member.Name);
-                    var colAttr = prop?.GetCustomAttribute<ColumnAttribute>();
+                    //var prop = entityType.GetProperty(member.Member.Name);
+                    var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
                     var colName = colAttr?.Name ?? member.Member.Name;
+                    var colTableName = GetEntityTableName(member.Member.DeclaringType!);
                     var paramNames = new List<string>();
                     foreach (var v in values ?? Enumerable.Empty<object>())
                     {
                         parameters.Add(v);
                         paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
                     }
-                    return $"{_dialect.FormatColumn(colName)} IN ({string.Join(", ", paramNames)})";
+                    return $"{_dialect.FormatColumn(colName, colTableName)} IN ({string.Join(", ", paramNames)})";
                 }
             }
             // NOT IN support
@@ -138,16 +171,17 @@ namespace DLinq
                     if (member != null)
                     {
                         values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
-                        var prop = entityType.GetProperty(member.Member.Name);
-                        var colAttr = prop?.GetCustomAttribute<ColumnAttribute>();
+                        //var prop = entityType.GetProperty(member.Member.Name);
+                        var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
                         var colName = colAttr?.Name ?? member.Member.Name;
+                        var colTableName = GetEntityTableName(member.Member.DeclaringType!);
                         var paramNames = new List<string>();
                         foreach (var v in values ?? Enumerable.Empty<object>())
                         {
                             parameters.Add(v);
                             paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
                         }
-                        return $"{_dialect.FormatColumn(colName)} NOT IN ({string.Join(", ", paramNames)})";
+                        return $"{_dialect.FormatColumn(colName, colTableName)} NOT IN ({string.Join(", ", paramNames)})";
                     }
                 }
             }
@@ -180,6 +214,7 @@ namespace DLinq
             Expression current = expression;
             while (current is MethodCallExpression mce)
             {
+                
                 switch (mce.Method.Name)
                 {
                     case "Skip":
@@ -221,30 +256,8 @@ namespace DLinq
             // Try to infer entityType if not set by Where
             if (entityType == null && current != null)
             {
-                var type = current.GetType();
-                if (type.IsGenericType)
-                {
-                    if (type.GetGenericTypeDefinition() == typeof(SqlQuery<>))
-                    {
-                        entityType = type.GetGenericArguments()[0];
-                      }
-                    else if (typeof(IQueryable).IsAssignableFrom(type))
-                    {
-                        entityType = type.GetGenericArguments()[0];
-                    }
-                }
-            }
-
-            if (entityType == null && expression.Type.IsGenericType)
-            {
-                entityType = expression.Type.GetGenericArguments().FirstOrDefault();
-            }
-
-            if (entityType != null && entityType.IsGenericType && entityType.GetGenericTypeDefinition().Name == "Pair`2")
-            {
-                var leftType = entityType.GetGenericArguments()[0];
-                entityType = leftType;
-                // Optionally: record rightType for join validation
+                var type = GetEntityType(current.Type);
+                entityType = type;
             }
 
             if (entityType == null)
@@ -252,8 +265,7 @@ namespace DLinq
                 throw new InvalidOperationException("Unable to determine entity type for SQL translation. Ensure your query targets a valid entity type.");
             }
 
-            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
-            var tableName = tableAttr?.Name ?? entityType.Name;
+            var tableName = GetEntityTableName(entityType);
 
             // Only build columns from entityType if not set by projection
             if (columns == null)
@@ -416,7 +428,7 @@ namespace DLinq
         private void HandleWhere(MethodCallExpression mce, List<object> parameters, ref string whereSql, ref Type entityType, ref Expression current)
         {
             var whereLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
-            entityType = mce.Arguments[0].Type.GetGenericArguments()[0];
+            entityType = GetEntityType(mce.Arguments[0].Type.GetGenericArguments()[0]); //.Value.ElementType);
             var thisWhereSql = ParsePredicate(whereLambda.Body, parameters, entityType);
             whereSql = whereSql == null ? thisWhereSql : $"({thisWhereSql}) AND ({whereSql})";
             current = mce.Arguments[0];
@@ -653,39 +665,6 @@ namespace DLinq
             }
         }
 
-        // Shared predicate logic for building WHERE clause dictionary and SQL parts
-        private static void BuildWhereFromPredicate(Expression wherePredicate, Type entityType, Dictionary<string, object> whereDict, List<string> whereParts, ref int paramIndex, ISqlDialect dialect)
-        {
-            // Support =, >, <, >=, <=, != for binary expressions
-            if (wherePredicate is BinaryExpression binary && binary.Left is MemberExpression member)
-            {
-                var colName = member.Member.Name;
-                object value = null;
-                string sqlOp = binary.NodeType switch
-                {
-                    ExpressionType.Equal => "=",
-                    ExpressionType.GreaterThan => ">",
-                    ExpressionType.LessThan => "<",
-                    ExpressionType.GreaterThanOrEqual => ">=",
-                    ExpressionType.LessThanOrEqual => "<=",
-                    ExpressionType.NotEqual => "!=",
-                    _ => throw new NotSupportedException($"Unsupported binary operator: {binary.NodeType}")
-                };
-
-                if (binary.Right is ConstantExpression constant)
-                {
-                    value = constant.Value;
-                }
-                else
-                {
-                    var lambda = Expression.Lambda(binary.Right);
-                    value = lambda.Compile().DynamicInvoke();
-                }
-                string paramName = colName;
-                whereDict[paramName] = value;
-                whereParts.Add($"{dialect.FormatColumn(colName)} {sqlOp} @{paramName}");
-            }
-        }
         /// <summary>
         /// Helper to convert a dictionary of parameter names/values to an anonymous object for parameterization.
         /// </summary>
@@ -759,7 +738,7 @@ namespace DLinq
         /// </summary>
         /// <param name="entity">Entity object to inspect.</param>
         /// <returns>List of key information tuples.</returns>
-        public List<(string colName, object? value, bool isIdentity)> GetKeyInfo(object entity)
+        protected List<(string colName, object? value, bool isIdentity)> GetKeyInfo(object entity)
         {
             var entityType = entity.GetType();
             var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
@@ -776,6 +755,19 @@ namespace DLinq
                 }
             }
             return keyInfo;
+        }
+
+        private static bool IsDerivedFromGenericType(Type type, Type genericTypeDefinition)
+        {
+            while (type != null && type != typeof(object))
+            {
+                var current = type.IsGenericType ? type.GetGenericTypeDefinition() : type;
+                if (current == genericTypeDefinition)
+                    return true;
+
+                type = type.BaseType;
+            }
+            return false;
         }
 
         private static List<Column> ParseProjectionColumns(Expression body, ISqlDialect dialect)

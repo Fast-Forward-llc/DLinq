@@ -31,7 +31,7 @@ namespace DLinq
         Task<R?> InsertAsync<T, R>(T entity, InsertOptions? options = null);
         Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null);
         void Open();
-        SqlQuery<T> Query<T>();
+        SqlQuery<T> QueryBuilder<T>();
         IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate);
         IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery);
         Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate);

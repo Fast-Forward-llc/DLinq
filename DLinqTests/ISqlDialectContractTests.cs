@@ -24,7 +24,7 @@ namespace DLinqTests
         private class DummyDialect : ISqlDialect
         {
             public string FormatTable(string tableName) => tableName;
-            public string FormatColumn(string columnName) => columnName;
+            public string FormatColumn(string columnName, string? tableName = null) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
             public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options) => "INSERT";

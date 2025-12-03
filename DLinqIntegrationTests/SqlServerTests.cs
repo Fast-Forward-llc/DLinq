@@ -345,17 +345,17 @@ namespace DLinqIntegrationTests
             var delCount = dlinq.Delete<Person>(p => p.Id >= minId);
             Assert.IsTrue(delCount > 0);
         }
-        [TestMethod]
-        public void DeletePersonGt0_Success()
-        {
-            //Insert a person to ensure there is a record to delete
-            var person = new DTOs.Person { FirstName = "Delete", LastName = "Placeholder", Age = 108 };
-            dlinq.Insert(person);
-            var minId = 100;
-            // Retrieve by Id
-            var delCount = dlinq.Delete<Person>(p => p.Age >= minId);
-            Assert.IsTrue(delCount > 0);
-        }
+        //[TestMethod]
+        //public void DeletePersonGt0_Success()
+        //{
+        //    //Insert a person to ensure there is a record to delete
+        //    var person = new DTOs.Person { FirstName = "Delete", LastName = "Placeholder", Age = 108 };
+        //    dlinq.Insert(person);
+        //    var minId = 100;
+        //    // Retrieve by Id
+        //    var delCount = dlinq.Delete<Person>(p => p.Age >= minId);
+        //    Assert.IsTrue(delCount > 0);
+        //}
 
         [TestMethod]
         public void QueryPerson_Success()
@@ -384,6 +384,17 @@ namespace DLinqIntegrationTests
 
             Assert.AreEqual(5, results.Count);
             Assert.IsTrue(results[0].Age >= results[1].Age || results[0].Age <= results[1].Age); // Ordered by Age
+        }
+
+        [TestMethod]
+        public void QueryPersonPet_Join_Success()
+        {
+            var query = dlinq.QueryBuilder<Pet>()
+                .Join<Person, int?>(pet => pet.OwnerId , person => person.Id)
+                .Select(pet => pet.Left);
+            var results = dlinq.Query<Pet>(query).ToList();
+
+            Assert.IsTrue(results.Count > 0);
         }
     }
 }

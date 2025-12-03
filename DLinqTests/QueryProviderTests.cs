@@ -18,7 +18,7 @@ namespace DLinqTests
         private class TestDialect : ISqlDialect
         {
             public string FormatTable(string tableName) => tableName;
-            public string FormatColumn(string columnName) => columnName;
+            public string FormatColumn(string columnName, string? tableName = null) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, System.Collections.Generic.List<object> parameters) => "SELECT";
             

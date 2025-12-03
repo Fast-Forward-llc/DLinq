@@ -9,17 +9,23 @@ namespace DLinq
     {
         public string FormatTable(string tableName)
         {
+            if (string.IsNullOrWhiteSpace(tableName)) return tableName;
             // Split schema-qualified names and quote each part
             return string.Join(".", tableName.Split('.').Select(part => $"[{part.Replace("]", "]]")}]"));
         }
 
-        public string FormatColumn(string columnName)
+        public string FormatColumn(string columnName, string? tableName = null)
         {
             if (string.IsNullOrEmpty(columnName)) return columnName;
-            string escaped = EscapeInnerSquareBrackets(columnName);
-            if (escaped.StartsWith("[") && escaped.EndsWith("]"))
-                return escaped;
-            return $"[{escaped}]";
+            string escapedColumnName = EscapeInnerSquareBrackets(columnName);
+            string escapedTableName = FormatTable(tableName!);
+            if (!string.IsNullOrWhiteSpace(tableName) && !(escapedTableName.StartsWith('[') && escapedTableName.EndsWith(']')))
+                escapedTableName = $"[{escapedTableName}]";
+            if (!string.IsNullOrWhiteSpace(columnName) && !(escapedColumnName.StartsWith('[') && escapedColumnName.EndsWith(']')))
+                escapedColumnName = $"[{escapedColumnName}]";
+            if (!string.IsNullOrWhiteSpace(tableName))
+                return $"{escapedTableName}.{escapedColumnName}";
+            return $"{escapedColumnName}";
         }
         private static string EscapeInnerSquareBrackets(string input)
         {
@@ -53,9 +59,14 @@ namespace DLinq
         {
             var sb = new StringBuilder();
             sb.Append("SELECT ");
-            if (ast.Columns != null && ast.Columns.Count > 0)
+            if (ast.Columns.Count > 0)
             {
-                sb.Append(string.Join(", ", ast.Columns.Select(FormatColumn)));
+                sb.Append(string.Join(", ", ast.Columns.Select(c =>
+                {
+                    var col = FormatColumn(c.Name, c.Table);
+                    var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
+                    return $"{col}{alias}";
+                })));
             }
             else
             {
@@ -67,7 +78,7 @@ namespace DLinq
             {
                 foreach (var join in ast.Joins)
                 {
-                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {FormatColumn(join.LeftColumn)} = {FormatColumn(join.RightColumn)}");
+                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {FormatColumn(join.LeftColumn, ast.Table)} = {FormatColumn(join.RightColumn, join.Table)}");
                 }
             }
             if (!string.IsNullOrEmpty(ast.WhereSql))
@@ -87,15 +98,15 @@ namespace DLinq
             return sb.ToString();
         }
 
-        private string FormatColumn(Column col)
-        {
-            var colSql = !string.IsNullOrEmpty(col.Table)
-                ? $"{FormatTable(col.Table)}.{FormatColumn(col.Name)}"
-                : FormatColumn(col.Name);
-            if (!string.IsNullOrEmpty(col.Alias) && col.Alias != col.Name)
-                colSql += $" AS {FormatColumn(col.Alias)}";
-            return colSql;
-        }
+        //private string FormatColumn(Column col)
+        //{
+        //    var colSql = !string.IsNullOrEmpty(col.Table)
+        //        ? $"{FormatTable(col.Table)}.{FormatColumn(col.Name)}"
+        //        : FormatColumn(col.Name);
+        //    if (!string.IsNullOrEmpty(col.Alias) && col.Alias != col.Name)
+        //        colSql += $" AS {FormatColumn(col.Alias)}";
+        //    return colSql;
+        //}
 
         public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, InsertOptions options)
         {

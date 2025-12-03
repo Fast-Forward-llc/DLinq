@@ -158,7 +158,7 @@ namespace DLinq
         }
 
         // New Join overload for property-style access (Pair<T, TJoin>)
-        public SqlQuery<Pair<T, TJoin>> Join<TJoin, TKey>(
+        public SqlQuery<JoinResult<T, TJoin>> Join<TJoin, TKey>(
             Expression<Func<T, TKey>> outerKeySelector,
             Expression<Func<TJoin, TKey>> innerKeySelector)
         {
@@ -171,7 +171,7 @@ namespace DLinq
             var outerParam = Expression.Parameter(typeof(T), "outer");
             var innerParam = Expression.Parameter(typeof(TJoin), "inner");
 
-            var pairType = typeof(Pair<,>).MakeGenericType(typeof(T), typeof(TJoin));
+            var pairType = typeof(JoinResult<,>).MakeGenericType(typeof(T), typeof(TJoin));
             var ctor = pairType.GetConstructor(new[] { typeof(T), typeof(TJoin) });
             Expression newPair;
             if (ctor != null)
@@ -182,19 +182,19 @@ namespace DLinq
             {
                 // fallback to parameterless + member init if ctor not found
                 var newExpr = Expression.New(pairType);
-                var leftMember = pairType.GetProperty(nameof(Pair<T, TJoin>.Left));
-                var rightMember = pairType.GetProperty(nameof(Pair<T, TJoin>.Right));
+                var leftMember = pairType.GetProperty(nameof(JoinResult<T, TJoin>.Left));
+                var rightMember = pairType.GetProperty(nameof(JoinResult<T, TJoin>.Right));
                 var bindings = new List<MemberBinding>();
                 if (leftMember != null) bindings.Add(Expression.Bind(leftMember, outerParam));
                 if (rightMember != null) bindings.Add(Expression.Bind(rightMember, innerParam));
                 newPair = Expression.MemberInit(newExpr, bindings);
             }
-            var selector = Expression.Lambda<Func<T, TJoin, Pair<T, TJoin>>>(newPair, outerParam, innerParam);
+            var selector = Expression.Lambda<Func<T, TJoin, JoinResult<T, TJoin>>>(newPair, outerParam, innerParam);
 
             // Reuse existing Join overload that accepts a resultSelector
             var joined = this.Join(inner, outerKeySelector, innerKeySelector, selector);
 
-            return (SqlQuery<Pair<T, TJoin>>)(object)joined;
+            return (SqlQuery<JoinResult<T, TJoin>>)(object)joined;
         }
 
         public SqlQuery<T> Where(Expression<Func<T, bool>> predicate)
@@ -227,13 +227,15 @@ namespace DLinq
     }
 
     // Helper type to expose the joined items as properties (x.Left / x.Right)
-    public class Pair<TLeft, TRight>
+    public class JoinResult { }
+
+    public class JoinResult<TLeft, TRight>: JoinResult
     {
         public TLeft Left { get; set; }
         public TRight Right { get; set; }
 
-        public Pair() { }
-        public Pair(TLeft left, TRight right)
+        public JoinResult() { }
+        public JoinResult(TLeft left, TRight right)
         {
             Left = left;
             Right = right;

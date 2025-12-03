@@ -216,5 +216,27 @@ namespace DLinqIntegrationTests
             Assert.AreEqual(5, results.Count);
             Assert.IsTrue(results[0].Age >= results[1].Age || results[0].Age <= results[1].Age); // Ordered by Age
         }
+
+        [TestMethod]
+        public void QueryPersonPet_Join_Success()
+        {
+            var person = new Person { FirstName = "Jennifer", LastName = "Blake", Age = 29 };
+            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
+            var inserted = dlinq.Insert(person, options);
+            Assert.IsNotNull(inserted);
+            Assert.IsTrue(inserted.Id > 0);
+            var pet = new Pet { Name = "Fido", OwnerId = inserted.Id };
+            var insertedPet = dlinq.Insert(pet, options);
+            Assert.IsNotNull(insertedPet);
+            Assert.IsTrue(insertedPet.Id > 0);
+
+            var query = dlinq.QueryBuilder<Pet>()
+                .Join<Person, int?>(pet => pet.OwnerId, person => person.Id)
+                .Where(joinResult => joinResult.Right.Id == inserted.Id)
+                .Select(pet => pet.Left);
+            var results = dlinq.Query<Pet>(query).ToList();
+
+            Assert.IsTrue(results.Count > 0);
+        }
     }
 }

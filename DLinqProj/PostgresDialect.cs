@@ -21,12 +21,14 @@ namespace DLinq
 
         public string FormatTable(string tableName)
         {
+            if (string.IsNullOrWhiteSpace(tableName)) return tableName;
             // Split schema-qualified names and quote each part
             return string.Join(".", tableName.Split('.').Select(part => FormatOptions($"\"{part.Replace("\"", "\"\"")}\"")));
         }
 
         public string FormatOptions(string identifier)
         {
+            if (string.IsNullOrWhiteSpace(identifier)) return string.Empty;
             switch (_options)
             {
                 case DialectOptions.ForceLowerCase: return identifier.ToLower();
@@ -38,24 +40,17 @@ namespace DLinq
             }
         }
 
-        public string FormatColumn(string columnName)
+        public string FormatColumn(string columnName, string? tableName = null)
         {
-            if (string.IsNullOrEmpty(columnName)) return columnName;
-            string escaped = FormatOptions(columnName.Replace("\"", "\"\""));
-            return QuotedIdentifier(escaped);
-        }
-
-        public string FormatColumnWithAlias(string columnName)
-        {
-            if (string.IsNullOrEmpty(columnName)) return columnName;
-            string colName = FormatColumn(columnName);
-            string colNameRaw = QuotedIdentifier(columnName);
-            if (colName == colNameRaw) return colName;
-            return $"{colName} AS {colNameRaw}";
+            if (string.IsNullOrWhiteSpace(columnName)) return columnName;
+            string escapedColumnName = FormatOptions(columnName.Replace("\"", "\"\""));
+            string escapedTableName = $"{FormatTable(tableName!)}";
+            return (string.IsNullOrWhiteSpace(escapedTableName) ? "" : $"{QuotedIdentifier(escapedTableName)}.") + QuotedIdentifier(escapedColumnName);
         }
 
         private string QuotedIdentifier(string identifier)
         {
+            if (string.IsNullOrWhiteSpace(identifier)) return string.Empty;
             if (identifier.StartsWith("\"") && identifier.EndsWith("\""))
                 return identifier;
             return $"\"{identifier}\"";
@@ -71,10 +66,9 @@ namespace DLinq
             {
                 sb.Append(string.Join(", ", ast.Columns.Select(c =>
                 {
-                    var table = FormatTable(c.Table);
-                    var col = FormatColumn(c.Name);
+                    var col = FormatColumn(c.Name, c.Table);
                     var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
-                    return $"{table}.{col}{alias}";
+                    return $"{col}{alias}";
                 })));
             }
             else
@@ -98,7 +92,7 @@ namespace DLinq
                 foreach (var join in ast.Joins)
                 {
                     var onClauses = join.OnColumns.Select(on =>
-                        $"{FormatTable(on.LeftTable)}.{FormatColumn(on.LeftColumn)} = {FormatTable(on.RightTable)}.{FormatColumn(on.RightColumn)}"
+                        $"{FormatColumn(on.LeftColumn, on.LeftTable)} = {FormatColumn(on.RightColumn, on.RightTable)}"
                     );
                     sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {string.Join(" AND ", onClauses)}");
                 }
