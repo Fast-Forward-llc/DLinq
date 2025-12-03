@@ -164,7 +164,7 @@ namespace DLinqTests
             var query = new SqlQuery<TestEntity>(GetProvider());
             var (sql, parameters) = query.ToDeleteSql(x => x.Id == 1);
             StringAssert.Contains(sql, "DELETE FROM [DummyTable]");
-            StringAssert.Contains(sql, "WHERE [Id] = @p0");
+            StringAssert.Contains(sql, "WHERE [DummyTable].[Id] = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(1, paramDict["@p0"]);

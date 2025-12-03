@@ -82,110 +82,123 @@ namespace DLinq
         /// <returns>SQL WHERE clause string.</returns>
         private string ParsePredicate(Expression expr, List<object> parameters, Type entityType)
         {
-            if (expr is BinaryExpression binary)
+            switch (expr)
             {
-                if (binary.NodeType == ExpressionType.AndAlso || binary.NodeType == ExpressionType.OrElse)
-                {
-                    var left = ParsePredicate(binary.Left, parameters, entityType);
-                    var right = ParsePredicate(binary.Right, parameters, entityType);
-                    var op = binary.NodeType == ExpressionType.AndAlso ? "AND" : "OR";
-                    return $"({left}) {op} ({right})";
-                }
-                // Comparison operators
-                MemberExpression member = null;
-                object constantValue = null;
-
-                // Handle left side as member, right side as value
-                if (binary.Left is MemberExpression leftMember)
-                {
-                    member = leftMember;
-                    constantValue = GetValueFromExpression(binary.Right);
-                }
-                // Handle right side as member, left side as value
-                else if (binary.Right is MemberExpression rightMember)
-                {
-                    member = rightMember;
-                    constantValue = GetValueFromExpression(binary.Left);
-                }
-
-                if (member != null && constantValue != null)
-                {
-                    //var prop = entityType.GetProperty(member.Member.Name);
-                    var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
-                    var colName = colAttr?.Name ?? member.Member.Name;
-                    var colTableName = GetEntityTableName(member.Member.DeclaringType!);
-                    string sqlOp = binary.NodeType switch
-                    {
-                        ExpressionType.Equal => "=",
-                        ExpressionType.NotEqual => "!=",
-                        ExpressionType.GreaterThan => ">",
-                        ExpressionType.GreaterThanOrEqual => ">=",
-                        ExpressionType.LessThan => "<",
-                        ExpressionType.LessThanOrEqual => "<=",
-                        _ => throw new NotSupportedException()
-                    };
-                    parameters.Add(constantValue);
-                    return $"{_dialect.FormatColumn(colName, colTableName)} {sqlOp} {_dialect.ParameterPlaceholder(parameters.Count - 1)}";
-                }
+                case BinaryExpression binary:
+                    return ParseBinaryPredicate(binary, parameters, entityType);
+                case MethodCallExpression methodCall when methodCall.Method.Name == "Contains":
+                    return ParseContainsPredicate(methodCall, parameters, entityType);
+                case UnaryExpression unary when unary.NodeType == ExpressionType.Not:
+                    return ParseNotContainsPredicate(unary, parameters, entityType);
+                default:
+                    throw new NotSupportedException("Unsupported predicate expression.");
             }
-            // IN/NOT IN support
-            if (expr is MethodCallExpression containsCall && containsCall.Method.Name == "Contains")
+        }
+
+        private (string colName, string colTableName) GetColumnInfo(MemberExpression member)
+        {
+            var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
+            var colName = colAttr?.Name ?? member.Member.Name;
+            var colTableName = GetEntityTableName(member.Member.DeclaringType!);
+            return (colName, colTableName);
+        }
+
+        private List<string> AddParameters(IEnumerable<object> values, List<object> parameters)
+        {
+            var paramNames = new List<string>();
+            foreach (var v in values ?? Enumerable.Empty<object>())
             {
-                var member = containsCall.Arguments[0] as MemberExpression;
-                var valuesExpr = containsCall.Object ?? containsCall.Arguments[0];
-                IEnumerable<object> values = null;
-                if (member == null && containsCall.Arguments.Count == 2)
+                parameters.Add(v);
+                paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
+            }
+            return paramNames;
+        }
+
+        private string ParseBinaryPredicate(BinaryExpression binary, List<object> parameters, Type entityType)
+        {
+            if (binary.NodeType == ExpressionType.AndAlso || binary.NodeType == ExpressionType.OrElse)
+            {
+                var left = ParsePredicate(binary.Left, parameters, entityType);
+                var right = ParsePredicate(binary.Right, parameters, entityType);
+                var op = binary.NodeType == ExpressionType.AndAlso ? "AND" : "OR";
+                return $"({left}) {op} ({right})";
+            }
+
+            MemberExpression member = null;
+            object constantValue = null;
+
+            if (binary.Left is MemberExpression leftMember)
+            {
+                member = leftMember;
+                constantValue = GetValueFromExpression(binary.Right);
+            }
+            else if (binary.Right is MemberExpression rightMember)
+            {
+                member = rightMember;
+                constantValue = GetValueFromExpression(binary.Left);
+            }
+
+            if (member != null && constantValue != null)
+            {
+                var (colName, colTableName) = GetColumnInfo(member);
+                string sqlOp = binary.NodeType switch
                 {
-                    member = containsCall.Arguments[1] as MemberExpression;
-                    valuesExpr = containsCall.Arguments[0];
+                    ExpressionType.Equal => "=",
+                    ExpressionType.NotEqual => "!=",
+                    ExpressionType.GreaterThan => ">",
+                    ExpressionType.GreaterThanOrEqual => ">=",
+                    ExpressionType.LessThan => "<",
+                    ExpressionType.LessThanOrEqual => "<=",
+                    _ => throw new NotSupportedException()
+                };
+                parameters.Add(constantValue);
+                return $"{_dialect.FormatColumn(colName, colTableName)} {sqlOp} {_dialect.ParameterPlaceholder(parameters.Count - 1)}";
+            }
+
+            throw new NotSupportedException("Unsupported binary predicate.");
+        }
+
+        private string ParseContainsPredicate(MethodCallExpression containsCall, List<object> parameters, Type entityType)
+        {
+            var member = containsCall.Arguments[0] as MemberExpression;
+            var valuesExpr = containsCall.Object ?? containsCall.Arguments[0];
+            IEnumerable<object> values = null;
+            if (member == null && containsCall.Arguments.Count == 2)
+            {
+                member = containsCall.Arguments[1] as MemberExpression;
+                valuesExpr = containsCall.Arguments[0];
+            }
+            if (member != null)
+            {
+                values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
+                var (colName, colTableName) = GetColumnInfo(member);
+                var paramNames = AddParameters(values, parameters);
+                return $"{_dialect.FormatColumn(colName, colTableName)} IN ({string.Join(", ", paramNames)})";
+            }
+            throw new NotSupportedException("Unsupported Contains predicate.");
+        }
+
+        private string ParseNotContainsPredicate(UnaryExpression unary, List<object> parameters, Type entityType)
+        {
+            if (unary.Operand is MethodCallExpression notContainsCall && notContainsCall.Method.Name == "Contains")
+            {
+                var member = notContainsCall.Arguments[0] as MemberExpression;
+                var valuesExpr = notContainsCall.Object ?? notContainsCall.Arguments[0];
+                IEnumerable<object> values = null;
+                if (member == null && notContainsCall.Arguments.Count == 2)
+                {
+                    member = notContainsCall.Arguments[1] as MemberExpression;
+                    valuesExpr = notContainsCall.Arguments[0];
                 }
                 if (member != null)
                 {
                     values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
-                    //var prop = entityType.GetProperty(member.Member.Name);
-                    var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
-                    var colName = colAttr?.Name ?? member.Member.Name;
-                    var colTableName = GetEntityTableName(member.Member.DeclaringType!);
-                    var paramNames = new List<string>();
-                    foreach (var v in values ?? Enumerable.Empty<object>())
-                    {
-                        parameters.Add(v);
-                        paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
-                    }
-                    return $"{_dialect.FormatColumn(colName, colTableName)} IN ({string.Join(", ", paramNames)})";
+                    var (colName, colTableName) = GetColumnInfo(member);
+                    var paramNames = AddParameters(values, parameters);
+                    return $"{_dialect.FormatColumn(colName, colTableName)} NOT IN ({string.Join(", ", paramNames)})";
                 }
             }
-            // NOT IN support
-            if (expr is UnaryExpression unary && unary.NodeType == ExpressionType.Not)
-            {
-                if (unary.Operand is MethodCallExpression notContainsCall && notContainsCall.Method.Name == "Contains")
-                {
-                    var member = notContainsCall.Arguments[0] as MemberExpression;
-                    var valuesExpr = notContainsCall.Object ?? notContainsCall.Arguments[0];
-                    IEnumerable<object> values = null;
-                    if (member == null && notContainsCall.Arguments.Count == 2)
-                    {
-                        member = notContainsCall.Arguments[1] as MemberExpression;
-                        valuesExpr = notContainsCall.Arguments[0];
-                    }
-                    if (member != null)
-                    {
-                        values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
-                        //var prop = entityType.GetProperty(member.Member.Name);
-                        var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
-                        var colName = colAttr?.Name ?? member.Member.Name;
-                        var colTableName = GetEntityTableName(member.Member.DeclaringType!);
-                        var paramNames = new List<string>();
-                        foreach (var v in values ?? Enumerable.Empty<object>())
-                        {
-                            parameters.Add(v);
-                            paramNames.Add(_dialect.ParameterPlaceholder(parameters.Count - 1));
-                        }
-                        return $"{_dialect.FormatColumn(colName, colTableName)} NOT IN ({string.Join(", ", paramNames)})";
-                    }
-                }
-            }
-            throw new NotSupportedException("Unsupported predicate expression.");
+            throw new NotSupportedException("Unsupported Not Contains predicate.");
         }
 
         /// <summary>
@@ -248,7 +261,7 @@ namespace DLinq
                         current = mce.Arguments[0];
                         break;
                     default:
-                        current = (current as MethodCallExpression)?.Arguments[0];
+                        current = (current as MethodCallExpression)?.Arguments[0]!;
                         break;
                 }
             }
@@ -293,12 +306,12 @@ namespace DLinq
             {
                 Table = tableName,
                 Columns = columns,
-                Where = null,
-                WhereSql = whereSql,
+                Where = null!,
+                WhereSql = whereSql!,
                 PrimaryKeys = primaryKeys,
                 Skip = skip,
                 Take = take,
-                FromFunction = fromFunction,
+                FromFunction = fromFunction!,
                 OrderBy = orderBy,
                 Joins = joins
             };
@@ -307,22 +320,22 @@ namespace DLinq
 
         private static void HandleSkip(MethodCallExpression mce, ref int? skip, ref Expression current)
         {
-            skip = (int)((ConstantExpression)mce.Arguments[1]).Value;
+            skip = (int)((ConstantExpression)mce.Arguments[1]).Value!;
             current = mce.Arguments[0];
         }
 
         private static void HandleTake(MethodCallExpression mce, ref int? take, ref Expression current)
         {
-            take = (int)((ConstantExpression)mce.Arguments[1]).Value;
+            take = (int)((ConstantExpression)mce.Arguments[1]).Value!;
             current = mce.Arguments[0];
         }
 
         private static void HandleFromFunction(MethodCallExpression mce, ref SqlFunctionSource fromFunction, ref Expression current)
         {
-            var fnName = (string)((ConstantExpression)mce.Arguments[1]).Value;
+            var fnName = (string)((ConstantExpression)mce.Arguments[1]).Value!;
             var argsExpr = (NewArrayExpression)mce.Arguments[2];
             var args = argsExpr.Expressions.Select(e => ((ConstantExpression)e).Value).ToList();
-            fromFunction = new SqlFunctionSource { FunctionName = fnName, Arguments = args };
+            fromFunction = new SqlFunctionSource { FunctionName = fnName, Arguments = args! };
             current = mce.Arguments[0];
         }
 
