@@ -7,13 +7,13 @@ using System;
 namespace DLinqIntegrationTests
 {
     [TestClass]
-    public sealed class PostgresqlTests
+    public sealed class PostgresqlTests:_TestBase
     {
         DLinqConnection dlinq;
 
-        public PostgresqlTests()
+        public PostgresqlTests():base()
         {
-            var connection = new NpgsqlConnection("Host=localhost;Port=5432;Database=DLinq;Username=postgres;Password=!Qwertyui0;");
+            var connection = new NpgsqlConnection(_config["ConnectionStrings:postgres"]);
             var dialect = new PostgresDialect(PostgresDialect.DialectOptions.ForceLowerCase);
             var dapperProvider = new DapperProvider(connection);
             dlinq = new DLinqConnection(connection, dialect, dapperProvider);

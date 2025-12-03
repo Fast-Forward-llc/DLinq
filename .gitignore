@@ -126,3 +126,5 @@ __pycache__/
 *.sqlite3
 
 # End of .gitignore
+/DLinqTests/appsettings.local.json
+/DLinqIntegrationTests/appsettings.local.json

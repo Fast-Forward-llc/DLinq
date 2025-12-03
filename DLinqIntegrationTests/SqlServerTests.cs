@@ -6,13 +6,13 @@ using Microsoft.Data.SqlClient;
 namespace DLinqIntegrationTests
 {
     [TestClass]
-    public sealed class SqlServerTests
+    public sealed class SqlServerTests : _TestBase
     {
         DLinqConnection dlinq;
 
         public SqlServerTests()
         {
-            var connection = new SqlConnection("server=.\\se16;database=DLinqTests;Integrated Security=True;MultipleActiveResultSets=true;TrustServerCertificate=True");
+            var connection = new SqlConnection(_config["ConnectionStrings:sqlserver"]);
             var dialect = new SqlServerDialect();
             var dapperProvider = new DapperProvider(connection);
             dlinq = new DLinqConnection(connection, dialect, dapperProvider);
