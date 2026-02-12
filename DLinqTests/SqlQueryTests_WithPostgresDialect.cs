@@ -167,7 +167,7 @@ namespace DLinqTests
             var (sql, parameters) = query.ToDeleteSql(x => x.Id == 1);
             Console.WriteLine(sql);
             StringAssert.Contains(sql, "DELETE FROM \"DummyTable\"");
-            StringAssert.Contains(sql, "WHERE \"DummyTable\".\"Id\" = @p0");
+            StringAssert.Contains(sql, "WHERE \"Id\" = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(1, paramDict["@p0"]);
@@ -180,7 +180,7 @@ namespace DLinqTests
             var (sql, parameters) = query.ToDeleteSql(x => x.Id > 1);
             Console.WriteLine(sql);
             StringAssert.Contains(sql, "DELETE FROM \"DummyTable\"");
-            StringAssert.Contains(sql, "WHERE \"DummyTable\".\"Id\" > @p0");
+            StringAssert.Contains(sql, "WHERE \"Id\" > @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(1, paramDict["@p0"]);
@@ -273,10 +273,11 @@ namespace DLinqTests
             Console.WriteLine(sql);
 
             // Validate SQL contains fully qualified ON clause with both key columns
-            StringAssert.Contains(sql, "\"Employee\".\"DepartmentId\" = \"Department\".\"Id\"", "SQL should contain the correct ON clause for the join.");
-            StringAssert.Contains(sql, "JOIN", "SQL should contain JOIN keyword.");
-            StringAssert.Contains(sql, "\"Employee\"", "SQL should reference Employee table.");
-            StringAssert.Contains(sql, "\"Department\"", "SQL should reference Department table.");
+            StringAssert.Contains(sql, "\"t2\".\"DepartmentId\" = \"t1\".\"Id\"", "SQL should contain the correct ON clause for the join.");
+            StringAssert.Contains(sql, "JOIN \"Department\" AS \"t1\"", "SQL should contain JOIN keyword.");
+            StringAssert.Contains(sql, "FROM \"Employee\" AS \"t2\"", "SQL should reference Employee table.");
+            StringAssert.Contains(sql, "\"Department\" AS \"t1\"", "SQL should reference Department table.");
+            StringAssert.Contains(sql, "\"t2\".\"Id\", \"t2\".\"DepartmentId\", \"t2\".\"Name\"", "SQL should reference columns");
         }
 
         [TestMethod]
@@ -338,13 +339,13 @@ namespace DLinqTests
         {
             var provider = GetProvider();
             var people = new SqlQuery<Person>(provider);
-            var joined = people.Join<Pet, int>(
+            var personPet = people.Join<Pet, int>(
                 person => person.Id,
                 pet => pet.OwnerId
             )
             .Where(x => x.Left.Name == "Alice")
             .Select(x => new PersonPet { PersonName = x.Left.Name, PetName = x.Right.Name });
-            var (sql, parameters) = joined.ToSql();
+            var (sql, parameters) = personPet.ToSql();
             Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("WHERE"));
             Assert.IsTrue(sql.Contains("PersonName"));

@@ -39,12 +39,29 @@ namespace DLinqTests
                 Table = "T",
                 Columns = new List<Column>
                 {
-                    new Column(null, "T", "A"),
-                    new Column(null, "T", "B")
+                    new Column(null, null, "A"),
+                    new Column(null, null, "B")
                 }
             };
             var sql = dialect.SelectStatement(ast, new List<object>());
-            StringAssert.StartsWith(sql, "SELECT [T].[A], [T].[B] FROM [T]");
+            StringAssert.StartsWith(sql, "SELECT [A], [B] FROM [T]");
+        }
+
+        [TestMethod]
+        public void SelectStatement_BasicSelect_WithTableAlias()
+        {
+            var ast = new SqlSelectNode
+            {
+                Table = "T",
+                Alias = "T1",
+                Columns = new List<Column>
+                {
+                    new Column(null, null, "A"),
+                    new Column(null, null, "B")
+                }
+            };
+            var sql = dialect.SelectStatement(ast, new List<object>());
+            StringAssert.StartsWith(sql, "SELECT [T1].[A], [T1].[B] FROM [T] AS [T1]");
         }
 
         [TestMethod]
@@ -103,12 +120,29 @@ namespace DLinqTests
                 Table = "T",
                 Columns = new List<Column>
                 {
-                    new Column(null, "T", "A"),
-                    new Column(null, "T", "B")
+                    new Column(null, null, "A"),
+                    new Column(null, null, "B")
                 }
             };
             var sql = dialect.SelectStatement(ast, new List<object>());
-            StringAssert.StartsWith(sql, "SELECT \"T\".\"A\", \"T\".\"B\" FROM \"T\"");
+            StringAssert.StartsWith(sql, "SELECT \"A\", \"B\" FROM \"T\"");
+        }
+
+        [TestMethod]
+        public void SelectStatement_BasicSelect_WithTableAlias()
+        {
+            var ast = new SqlSelectNode
+            {
+                Table = "T",
+                Alias = "T1",
+                Columns = new List<Column>
+                {
+                    new Column(null, null, "A"),
+                    new Column(null, null, "B")
+                }
+            };
+            var sql = dialect.SelectStatement(ast, new List<object>());
+            StringAssert.StartsWith(sql, "SELECT \"T1\".\"A\", \"T1\".\"B\" FROM \"T\" AS \"T1\"");
         }
 
         [TestMethod]

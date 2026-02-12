@@ -9,6 +9,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using Dapper;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace DLinq
 {
@@ -31,12 +32,20 @@ namespace DLinq
             _dapper = dapperProvider ?? new DapperProvider(connection);
         }
 
+        public virtual IEnumerable<T> Query<T>(SqlTextExpression sqlQuery)
+        {
+#if DEBUG_SQL
+            Console.WriteLine($"Executing query: {sqlQuery.Sql} \r\nWith Parameters: {JsonSerializer.Serialize(sqlQuery.Parameters)}");
+#endif
+            return _dapper.Query<T>(sqlQuery.Sql, sqlQuery.Parameters, GetCurrentTransaction()!);
+        }
+
         public virtual IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
-            #if DEBUG_SQL
-            Console.WriteLine($"Executing query: {sql}");
-            #endif
+#if DEBUG_SQL
+            Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
+#endif
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 

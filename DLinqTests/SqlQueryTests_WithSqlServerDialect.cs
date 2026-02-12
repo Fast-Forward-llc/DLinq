@@ -38,19 +38,15 @@ namespace DLinqTests
         private class TestDialect : ISqlDialect
         {
             public string FormatTable(string tableName) => tableName;
+            public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
+            public string FormatTableRaw(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
             public string FormatColumn(string columnName, string? tableName = null) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
-            public string SelectStatement(SqlSelectNode ast, List<object> parameters) => $"SELECT FROM {ast.Table} WHERE {ast.WhereSql}";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options)
-            {
-                return $"INSERT INTO {tableName}";
-            }
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys) => $"UPDATE {tableName}";
-            public string DeleteStatement(string tableName, object whereValues) => $"DELETE FROM {tableName}";
-            public string IdentityValueExpression(string tableName, string columnName)
-            {
-                return $"<identity>";
-            }
+            public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
+            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options) => "INSERT";
+            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys) => "UPDATE";
+            public string DeleteStatement(string tableName, object whereValues) => "DELETE";
+            public string IdentityValueExpression(string tableName, string columnName) => "<identity>";
         }
 
         [TestMethod]
@@ -60,8 +56,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.IsTrue(sql.Contains("WHERE"));
-            Assert.IsTrue(sql.Contains("Age"));
+            Assert.IsTrue(sql.Contains("WHERE [t1].[Age] > @p0"));
             Assert.AreEqual(1, ((IDictionary<string, object>)parameters).Count);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -164,7 +159,7 @@ namespace DLinqTests
             var query = new SqlQuery<TestEntity>(GetProvider());
             var (sql, parameters) = query.ToDeleteSql(x => x.Id == 1);
             StringAssert.Contains(sql, "DELETE FROM [DummyTable]");
-            StringAssert.Contains(sql, "WHERE [DummyTable].[Id] = @p0");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(1, paramDict["@p0"]);
@@ -378,13 +373,13 @@ namespace DLinqTests
         {
             var provider = GetProvider();
             var people = new SqlQuery<Person>(provider);
-            var joined = people.Join<Pet, int>(
+            var personPet = people.Join<Pet, int>(
                 person => person.Id,
                 pet => pet.OwnerId
             )
             .Where(x => x.Left.Name == "Alice")
             .Select(x => new PersonPet { PersonName = x.Left.Name, PetName = x.Right.Name });
-            var (sql, parameters) = joined.ToSql();
+            var (sql, parameters) = personPet.ToSql();
             Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("WHERE"));
             Assert.IsTrue(sql.Contains("PersonName"));

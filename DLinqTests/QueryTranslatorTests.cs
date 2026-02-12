@@ -53,6 +53,7 @@ namespace DLinqTests
         private class DummyDialect : ISqlDialect
         {
             public string FormatTable(string tableName) => tableName;
+            public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
             public string FormatColumn(string columnName, string? tableName = null) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";

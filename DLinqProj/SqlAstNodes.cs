@@ -8,6 +8,7 @@ namespace DLinq
     public class SqlSelectNode : SqlAstNode
     {
         public string Table { get; set; }
+        public string Alias { get; set; } // NEW: auto-generated alias
         public List<Column> Columns { get; set; } = new List<Column>();
         public SqlWhereNode Where { get; set; }
         public string WhereSql { get; set; }
@@ -22,6 +23,7 @@ namespace DLinq
     public class SqlJoinNode
     {
         public string Table { get; set; }
+        public string Alias { get; set; } // NEW: auto-generated alias
         public string LeftColumn { get; set; }
         public string RightColumn { get; set; }
         public string JoinType { get; set; }

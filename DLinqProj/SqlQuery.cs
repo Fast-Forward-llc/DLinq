@@ -15,6 +15,9 @@ namespace DLinq
         public Type ElementType => typeof(T);
         public IQueryProvider Provider { get; }
 
+        // Optionally, you could add an Alias property here if you want to track it at the query level
+        // public string? Alias { get; set; }
+
         public SqlQuery(QueryProvider provider, Expression expression = null)
         {
             Provider = provider;

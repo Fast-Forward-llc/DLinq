@@ -7,11 +7,22 @@ namespace DLinq
 {
     public class SqlServerDialect : ISqlDialect
     {
-        public string FormatTable(string tableName)
+        public string FormatTable(string tableName, string? alias = null)
         {
             if (string.IsNullOrWhiteSpace(tableName)) return tableName;
-            // Split schema-qualified names and quote each part
-            return string.Join(".", tableName.Split('.').Select(part => $"[{part.Replace("]", "]]")}]"));
+            var formatted = string.Join(".", tableName.Split('.').Select(part => $"[{part.Replace("]", "]]")}]"));
+            if (!string.IsNullOrEmpty(alias))
+                return $"{formatted} AS [{alias}]";
+            return formatted;
+        }
+
+        public string FormatTableRaw(string tableName, string? alias = null)
+        {
+            if (string.IsNullOrWhiteSpace(tableName)) return tableName;
+            var formatted = string.Join(".", tableName.Split('.').Select(part => $"{part.Replace("]", "]]")}"));
+            if (!string.IsNullOrEmpty(alias))
+                return alias;
+            return formatted;
         }
 
         public string FormatColumn(string columnName, string? tableName = null)
@@ -31,16 +42,13 @@ namespace DLinq
         {
             if (string.IsNullOrEmpty(input) || input.Length < 3)
                 return input;
-            //Exit early if the only brackets are the first and last.
             if (input.LastIndexOf("[")==0 && input.LastIndexOf("]")== input.Length-1) return input;
-            //Escape inner brackets
             var sb = new StringBuilder(input.Length+3);
             sb.Append(input[0]);
             for (int i = 1; i < input.Length - 1; i++)
             {
                 if (input[i] == '[' || input[i] == ']')
                 {
-                    // Only escape if not first or last character
                     sb.Append(input[i]);
                     sb.Append(input[i]);
                 }
@@ -63,7 +71,7 @@ namespace DLinq
             {
                 sb.Append(string.Join(", ", ast.Columns.Select(c =>
                 {
-                    var col = FormatColumn(c.Name, c.Table);
+                    var col = FormatColumn(c.Name, c.Table ?? ast.Alias);
                     var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
                     return $"{col}{alias}";
                 })));
@@ -73,12 +81,12 @@ namespace DLinq
                 sb.Append("*");
             }
             sb.Append(" FROM ");
-            sb.Append(FormatTable(ast.Table));
+            sb.Append(FormatTable(ast.Table, ast.Alias));
             if (ast.Joins != null && ast.Joins.Count > 0)
             {
                 foreach (var join in ast.Joins)
                 {
-                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {FormatColumn(join.LeftColumn, ast.Table)} = {FormatColumn(join.RightColumn, join.Table)}");
+                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table, join.Alias)} ON {FormatColumn(join.LeftColumn, ast.Alias)} = {FormatColumn(join.RightColumn, join.Alias)}");
                 }
             }
             if (!string.IsNullOrEmpty(ast.WhereSql))
@@ -89,7 +97,7 @@ namespace DLinq
             if (ast.OrderBy != null && ast.OrderBy.Count > 0)
             {
                 sb.Append(" ORDER BY ");
-                sb.Append(string.Join(", ", ast.OrderBy.Select(o => $"{FormatColumn(o.Column)}{(o.Descending ? " DESC" : " ASC")}")));
+                sb.Append(string.Join(", ", ast.OrderBy.Select(o => $"{FormatColumn(o.Column, ast.Alias)}{(o.Descending ? " DESC" : " ASC")}")));
             }
             if (ast.Take.HasValue)
             {
@@ -98,20 +106,16 @@ namespace DLinq
             return sb.ToString();
         }
 
-        //private string FormatColumn(Column col)
-        //{
-        //    var colSql = !string.IsNullOrEmpty(col.Table)
-        //        ? $"{FormatTable(col.Table)}.{FormatColumn(col.Name)}"
-        //        : FormatColumn(col.Name);
-        //    if (!string.IsNullOrEmpty(col.Alias) && col.Alias != col.Name)
-        //        colSql += $" AS {FormatColumn(col.Alias)}";
-        //    return colSql;
-        //}
-
         public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, InsertOptions options)
         {
             var quotedColumns = columns.Select(col => FormatColumn(col));
-            return $"INSERT INTO {FormatTable(tableName)} ({string.Join(", ", quotedColumns)}) VALUES ({string.Join(", ", paramNames)})";
+            var sql = $"INSERT INTO {FormatTable(tableName)} ({string.Join(", ", quotedColumns)})"; 
+            if (options.SelectAfterMutation)
+            {
+                sql += $" OUTPUT inserted.*";
+            }
+            sql += $" VALUES ({string.Join(", ", paramNames)})";
+            return sql;
         }
 
         public string UpdateStatement(string tableName, object setValues, object whereValues, UpdateOptions options, List<(string colName, object value)> primaryKeys)
@@ -120,12 +124,12 @@ namespace DLinq
             var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
             var setClauses = setDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
             var whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
-            var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)} WHERE {string.Join(" AND ", whereClauses)}";
-            if (options.SelectAfterMutation && primaryKeys.Count > 0)
+            var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)}";
+            if (options.SelectAfterMutation)
             {
-                var selectWhere = string.Join(" AND ", primaryKeys.Select(pk => $"{FormatColumn(pk.colName)} = @{pk.colName}"));
-                sql += $"; SELECT * FROM {FormatTable(tableName)} WHERE {selectWhere}";
+                sql += $" OUTPUT inserted.*";
             }
+            sql += whereClauses.Any() ? $" WHERE {string.Join(" AND ", whereClauses)}" : "";
             return sql;
         }
 

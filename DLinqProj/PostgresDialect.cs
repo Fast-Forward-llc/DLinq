@@ -19,14 +19,29 @@ namespace DLinq
 
         private DialectOptions _options;
 
-        public string FormatTable(string tableName)
+        public string FormatTable(string tableName, string? alias = null)
         {
             if (string.IsNullOrWhiteSpace(tableName)) return tableName;
-            // Split schema-qualified names and quote each part
-            return string.Join(".", tableName.Split('.').Select(part => FormatOptions($"\"{part.Replace("\"", "\"\"")}\"")));
+            if (tableName.StartsWith("\"")) tableName = tableName.Substring(1);
+            if (tableName.EndsWith("\"")) tableName = tableName.Substring(0, tableName.Length - 1);
+            var formatted = string.Join(".", tableName.Split('.').Select(part => FormatIdentifier($"\"{part.Replace("\"", "\"\"")}\"")));
+            if (!string.IsNullOrEmpty(alias))
+                return $"{formatted} AS \"{alias}\"";
+            return formatted;
         }
 
-        public string FormatOptions(string identifier)
+        public string FormatTableRaw(string tableName, string? alias = null)
+        {
+            if (string.IsNullOrWhiteSpace(tableName)) return tableName;
+            if (tableName.StartsWith("\"")) tableName = tableName.Substring(1);
+            if (tableName.EndsWith("\"")) tableName = tableName.Substring(0, tableName.Length - 1);
+            var formatted = string.Join(".", tableName.Split('.').Select(part => FormatIdentifier($"{part.Replace("\"", "\"\"")}")));
+            if (!string.IsNullOrEmpty(alias))
+                return alias;
+            return formatted;
+        }
+
+        public string FormatIdentifier(string identifier)
         {
             if (string.IsNullOrWhiteSpace(identifier)) return string.Empty;
             switch (_options)
@@ -40,12 +55,13 @@ namespace DLinq
             }
         }
 
-        public string FormatColumn(string columnName, string? tableName = null)
+        public string FormatColumn(string columnName, string? tableAlias = null)
         {
             if (string.IsNullOrWhiteSpace(columnName)) return columnName;
-            string escapedColumnName = FormatOptions(columnName.Replace("\"", "\"\""));
-            string escapedTableName = $"{FormatTable(tableName!)}";
-            return (string.IsNullOrWhiteSpace(escapedTableName) ? "" : $"{QuotedIdentifier(escapedTableName)}.") + QuotedIdentifier(escapedColumnName);
+            string escapedColumnName = FormatIdentifier(columnName.Replace("\"", "\"\""));
+            if (!string.IsNullOrWhiteSpace(tableAlias))
+                return $"{FormatTable(tableAlias)}.\"{escapedColumnName}\"";
+            return $"\"{escapedColumnName}\"";
         }
 
         private string QuotedIdentifier(string identifier)
@@ -66,7 +82,7 @@ namespace DLinq
             {
                 sb.Append(string.Join(", ", ast.Columns.Select(c =>
                 {
-                    var col = FormatColumn(c.Name, c.Table);
+                    var col = FormatColumn(c.Name, c.Table ?? ast.Alias);
                     var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
                     return $"{col}{alias}";
                 })));
@@ -85,16 +101,16 @@ namespace DLinq
             }
             else
             {
-                sb.Append(FormatTable(ast.Table));
+                sb.Append(FormatTable(ast.Table, ast.Alias));
             }
             if (ast.Joins != null && ast.Joins.Count > 0)
             {
                 foreach (var join in ast.Joins)
                 {
                     var onClauses = join.OnColumns.Select(on =>
-                        $"{FormatColumn(on.LeftColumn, on.LeftTable)} = {FormatColumn(on.RightColumn, on.RightTable)}"
+                        $"{FormatColumn(on.LeftColumn, ast.Alias)} = {FormatColumn(on.RightColumn, join.Alias)}"
                     );
-                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table)} ON {string.Join(" AND ", onClauses)}");
+                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table, join.Alias)} ON {string.Join(" AND ", onClauses)}");
                 }
             }
             if (!string.IsNullOrEmpty(ast.WhereSql))
@@ -105,7 +121,7 @@ namespace DLinq
             if (ast.OrderBy != null && ast.OrderBy.Count > 0)
             {
                 sb.Append(" ORDER BY ");
-                sb.Append(string.Join(", ", ast.OrderBy.Select(o => $"{FormatColumn(o.Column)}{(o.Descending ? " DESC" : " ASC")}")));
+                sb.Append(string.Join(", ", ast.OrderBy.Select(o => $"{FormatColumn(o.Column, ast.Alias)}{(o.Descending ? " DESC" : " ASC")}")));
             }
             if (ast.Take.HasValue)
             {
@@ -122,6 +138,10 @@ namespace DLinq
         {
             var quotedColumns = columns.Select(col => FormatColumn(col));
             var sql = $"INSERT INTO {FormatTable(tableName)} ({string.Join(", ", quotedColumns)}) VALUES ({string.Join(", ", paramNames)})";
+            if (options.SelectAfterMutation)
+            {
+                sql += " RETURNING *;";
+            }
             return sql;
         }
 
@@ -134,8 +154,8 @@ namespace DLinq
             var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)} WHERE {string.Join(" AND ", whereClauses)}";
             if (options.SelectAfterMutation && primaryKeys.Count > 0)
             {
-                var selectWhere = string.Join(" AND ", primaryKeys.Select(pk => $"{FormatColumn(pk.colName)} = @{pk.colName}"));
-                sql += $"; SELECT * FROM {FormatTable(tableName)} WHERE {selectWhere}";
+                //var selectWhere = string.Join(" AND ", primaryKeys.Select(pk => $"{FormatColumn(pk.colName)} = @{pk.colName}"));
+                sql += $" RETURNING *;";
             }
             return sql;
         }
