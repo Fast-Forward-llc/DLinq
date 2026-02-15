@@ -206,7 +206,7 @@ namespace DLinqIntegrationTests
                 dlinq.Insert(person);
             }
 
-            var query = dlinq.Select<Person>()
+            var query = dlinq.From<Person>()
                 .OrderBy(p => p.Age)
                 .Skip(2)
                 .Take(5)
@@ -215,106 +215,6 @@ namespace DLinqIntegrationTests
 
             Assert.AreEqual(5, results.Count);
             Assert.IsTrue(results[0].Age >= results[1].Age || results[0].Age <= results[1].Age); // Ordered by Age
-        }
-
-        [TestMethod]
-        public void QueryPersonPet_Join_Success()
-        {
-            var person = new Person { FirstName = "Jennifer", LastName = "Blake", Age = 29 };
-            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
-            var inserted = dlinq.Insert(person, options);
-            Assert.IsNotNull(inserted);
-            Assert.IsTrue(inserted.Id > 0);
-            var pet = new Pet { Name = "Fido", OwnerId = inserted.Id };
-            var insertedPet = dlinq.Insert(pet, options);
-            Assert.IsNotNull(insertedPet);
-            Assert.IsTrue(insertedPet.Id > 0);
-
-            var query = dlinq.QueryBuilder<Pet>()
-                .Join<Person, int?>(pet => pet.OwnerId, person => person.Id)
-                .Where(joinResult => joinResult.Right.Id == inserted.Id)
-                .Select(entities => entities.Left);
-            var results = dlinq.Query<Pet>(query).ToList();
-
-            Assert.IsTrue(results.Count > 0);
-        }
-        [TestMethod]
-        public void QueryPersonPet_Join_SelectPerson_Success()
-        {
-            var person = new Person { FirstName = "Jennifer", LastName = "Blake", Age = 29 };
-            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
-            var inserted = dlinq.Insert(person, options);
-            Assert.IsNotNull(inserted);
-            Assert.IsTrue(inserted.Id > 0);
-            var pet = new Pet { Name = "Fido", OwnerId = inserted.Id };
-            var insertedPet = dlinq.Insert(pet, options);
-            Assert.IsNotNull(insertedPet);
-            Assert.IsTrue(insertedPet.Id > 0);
-
-            var query = dlinq.QueryBuilder<Pet>()
-                .Join<Person, int?>(pet => pet.OwnerId, person => person.Id)
-                .Where(joinResult => joinResult.Right.Id == inserted.Id)
-                .Select(entities => entities.Right);
-            var results = dlinq.Query<Person>(query).ToList();
-
-            Assert.IsTrue(results.Count > 0);
-        }
-
-        [TestMethod]
-        public void QueryPersonPet_Join_SelectPerson_Projection_Success()
-        {
-            var person = new Person { FirstName = "Jennifer", LastName = "Blake", Age = 29 };
-            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
-            var inserted = dlinq.Insert(person, options);
-            Assert.IsNotNull(inserted);
-            Assert.IsTrue(inserted.Id > 0);
-            var pet = new Pet { Name = "Fido", OwnerId = inserted.Id };
-            var insertedPet = dlinq.Insert(pet, options);
-            Assert.IsNotNull(insertedPet);
-            Assert.IsTrue(insertedPet.Id > 0);
-
-            var query = dlinq.QueryBuilder<Pet>()
-                .Join<Person, int?>(pet => pet.OwnerId, person => person.Id)
-                .Where(joinResult => joinResult.Right.Id == inserted.Id)
-                .Select(entities => new Person { 
-                    Id=entities.Right.Id, 
-                    FirstName=entities.Left.Name,
-                    LastName=entities.Right.LastName,
-                    Age=22,
-                    CreateDateUTC = entities.Right.CreateDateUTC
-                });
-            var results = dlinq.Query<Person>(query).ToList();
-
-            Assert.IsTrue(results.Count > 0);
-        }
-
-        [TestMethod]
-        public void QueryPersonPet_Join_SelectPerson_Projection_Success()
-        {
-            var person = new Person { FirstName = "Jennifer", LastName = "Blake", Age = 29 };
-            var options = new DLinq.InsertOptions { SelectAfterMutation = true };
-            var inserted = dlinq.Insert(person, options);
-            Assert.IsNotNull(inserted);
-            Assert.IsTrue(inserted.Id > 0);
-            var pet = new Pet { Name = "Fido", OwnerId = inserted.Id };
-            var insertedPet = dlinq.Insert(pet, options);
-            Assert.IsNotNull(insertedPet);
-            Assert.IsTrue(insertedPet.Id > 0);
-
-            var query = dlinq.QueryBuilder<Pet>()
-                .Join<Person, int?>(pet => pet.OwnerId, person => person.Id)
-                .Where(joinResult => joinResult.Right.Id == inserted.Id)
-                .Select(entities => new Person
-                {
-                    Id = entities.Right.Id,
-                    FirstName = entities.Left.Name,
-                    LastName = entities.Right.LastName,
-                    Age = 22,
-                    CreateDateUTC = entities.Right.CreateDateUTC
-                });
-            var results = dlinq.Query<Person>(query).ToList();
-
-            Assert.IsTrue(results.Count > 0);
         }
     }
 }

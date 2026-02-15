@@ -51,7 +51,7 @@ namespace DLinq
 
         public virtual IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate)
         {
-            var query = Select<T>().Where(predicate);
+            var query = From<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
             #if DEBUG_SQL
                         Console.WriteLine($"Executing query: {sql}");
@@ -70,7 +70,7 @@ namespace DLinq
 
         public virtual async Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate)
         {
-            var query = Select<T>().Where(predicate);
+            var query = From<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
             #if DEBUG_SQL
                         Console.WriteLine($"Executing query: {sql}");
@@ -79,7 +79,7 @@ namespace DLinq
         }
 
         // Expose SqlQuery<T> for LINQ operations
-        public virtual SqlQuery<T> Select<T>() => new SqlQuery<T>(_provider);
+        public virtual SqlQuery<T> From<T>() => new SqlQuery<T>(_provider);
         public virtual SqlQuery<T> QueryBuilder<T>() => new SqlQuery<T>(_provider);
 
         public virtual int TransactionDepth => _transactionDepth;
@@ -167,7 +167,7 @@ namespace DLinq
                 predicate = predicate == null ? equal : Expression.AndAlso(predicate, equal);
             }
             var lambda = Expression.Lambda<Func<T, bool>>(predicate, param);
-            var query = Select<T>().Where(lambda);
+            var query = From<T>().Where(lambda);
             var (sql, parameters) = query.ToSql();
             return (sql, parameters);
         }
@@ -227,7 +227,7 @@ namespace DLinq
             var constant = Expression.Constant(key, keyProps[0].PropertyType);
             var equal = Expression.Equal(member, constant);
             var lambda = Expression.Lambda<Func<T, bool>>(equal, param);
-            var query = Select<T>().Where(lambda);
+            var query = From<T>().Where(lambda);
             var (sql, parameters) = query.ToSql();
             return (sql, parameters);
         }
@@ -240,7 +240,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToInsertSql(entity, options);
+                var (sql, parameters) = From<T>().ToInsertSql(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -265,7 +265,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToInsertSql(entity, options);
+                var (sql, parameters) = From<T>().ToInsertSql(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -290,7 +290,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToInsertSql<R>(entity, options);
+                var (sql, parameters) = From<T>().ToInsertSql<R>(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -314,7 +314,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToInsertSql<R>(entity, options);
+                var (sql, parameters) = From<T>().ToInsertSql<R>(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -339,7 +339,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToUpdateSql(entity, options);
+                var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -361,7 +361,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToUpdateSql(entity, options);
+                var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -387,7 +387,7 @@ namespace DLinq
             try
             {
                 // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
-                var query = Select<T>();
+                var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
@@ -409,7 +409,7 @@ namespace DLinq
             try
             {
                 // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
-                var query = Select<T>();
+                var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
@@ -430,7 +430,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
+                var (sql, parameters) = From<T>().ToDeleteSql(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif
@@ -450,7 +450,7 @@ namespace DLinq
             Open();
             try
             {
-                var (sql, parameters) = Select<T>().ToDeleteSql(entity, options);
+                var (sql, parameters) = From<T>().ToDeleteSql(entity, options);
                 #if DEBUG_SQL
                             Console.WriteLine($"Executing query: {sql}");
                 #endif

@@ -39,7 +39,6 @@ namespace DLinqTests
         {
             public string FormatTable(string tableName) => tableName;
             public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
-            public string FormatTableRaw(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
             public string FormatColumn(string columnName, string? tableName = null) => columnName;
             public string ParameterPlaceholder(int index) => "@p" + index;
             public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
@@ -173,25 +172,7 @@ namespace DLinqTests
             public string Name { get; set; }
         }
 
-        [TestMethod]
-        public void Join_MethodChaining_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var people = new SqlQuery<Person>(provider);
-            var pets = new SqlQuery<Pet>(provider);
-            var joined = people.Join(
-                pets,
-                person => person.Id,
-                pet => pet.OwnerId,
-                (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
-            );
-            var (sql, parameters) = joined.ToSql();
-            Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
-            // Should reference both Person and Pet columns
-            Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
-            Assert.IsTrue(sql.Contains("Pet") || sql.Contains("pet"));
-        }
-
+       
         [TestMethod]
         public void Join_WithWhere_GeneratesSql()
         {
@@ -230,65 +211,7 @@ namespace DLinqTests
             public string DepartmentName { get; set; }
         }
 
-        [TestMethod]
-        public void ToSql_InnerJoin_GeneratesCorrectSql()
-        {
-            var provider = GetProvider();
-            var employees = new SqlQuery<Employee>(provider);
-            var departments = new SqlQuery<Department>(provider);
-
-            var joined = employees.Join(
-                departments,
-                emp => emp.DepartmentId,
-                dept => dept.Id,
-                (emp, dept) => new EmployeeDepartment { EmployeeName = emp.Name, DepartmentName = dept.Name }
-            );
-
-            var (sql, parameters) = joined.ToSql();
-
-            // Validate SQL contains JOIN and correct ON clause
-            Assert.IsTrue(sql.Contains("JOIN", StringComparison.OrdinalIgnoreCase), "SQL should contain JOIN keyword.");
-            Assert.IsTrue(sql.Contains("DepartmentId", StringComparison.OrdinalIgnoreCase), "SQL should reference DepartmentId.");
-            Assert.IsTrue(sql.Contains("Id", StringComparison.OrdinalIgnoreCase), "SQL should reference Id.");
-            Assert.IsTrue(sql.Contains("Employee") || sql.Contains("employee"), "SQL should reference Employee table.");
-            Assert.IsTrue(sql.Contains("Department") || sql.Contains("department"), "SQL should reference Department table.");
-        }
-
-        [TestMethod]
-        public void Join_OverloadWithoutInnerQuery_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var people = new SqlQuery<Person>(provider);
-            // Use the new overload that does not require explicit inner SqlQuery parameter
-            var joined = people.Join<Pet, int, PersonPet>(
-                person => person.Id,
-                pet => pet.OwnerId,
-                (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
-            );
-            var (sql, parameters) = joined.ToSql();
-            Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
-            Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
-            Assert.IsTrue(sql.Contains("Pet") || sql.Contains("pet"));
-        }
-
-        [TestMethod]
-        public void Join_OverloadWithoutInnerQuery_WithWhere_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var people = new SqlQuery<Person>(provider);
-            var joined = people.Join<Pet, int, PersonPet>(
-                person => person.Id,
-                pet => pet.OwnerId,
-                (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
-            ).Where(x => x.PersonName == "Alice");
-            var (sql, parameters) = joined.ToSql();
-            Console.WriteLine(sql);
-            Assert.IsTrue(sql.Contains("WHERE"));
-            Assert.IsTrue(sql.Contains("PersonName"));
-            var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual("Alice", paramDict["p0"]);
-        }
-
+        
         private class Order
         {
             public int Id { get; set; }
@@ -319,102 +242,6 @@ namespace DLinqTests
         {
             public OrderCustomer oc { get; set; }
             public Product p { get; set; }
-        }
-
-        [TestMethod]
-        public void MultipleJoins_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var orders = new SqlQuery<Order>(provider);
-            var query = orders
-                .Join<Customer, int, OrderCustomer>(
-                    o => o.CustomerId,
-                    c => c.Id,
-                    (o, c) => new OrderCustomer { o = o, c = c }
-                )
-                .Join<Product, int, OrderCustomerProduct>(
-                    oc => oc.o.ProductId,
-                    p => p.Id,
-                    (oc, p) => new OrderCustomerProduct { oc = oc, p = p }
-                )
-                .Select(x => new OrderInfo
-                {
-                    CustomerName = x.oc.c.Name,
-                    ProductName = x.p.Name
-                });
-            var (sql, parameters) = query.ToSql();
-            Console.WriteLine(sql);
-            Assert.IsTrue(sql.Contains("JOIN", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("Order", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("Customer", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("Product", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("CustomerName", StringComparison.OrdinalIgnoreCase) || sql.Contains("ProductName", StringComparison.OrdinalIgnoreCase));
-        }
-
-        [TestMethod]
-        public void Join_OptimizedSyntax_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var people = new SqlQuery<Person>(provider);
-            // Use the new overload that returns Pair<Person, Pet>
-            var joined = people.Join<Pet, int>(
-                person => person.Id,
-                pet => pet.OwnerId
-            );
-            var (sql, parameters) = joined.ToSql();
-            Console.WriteLine(sql);
-            Assert.IsTrue(sql.Contains("JOIN") || sql.Contains("join") || sql.Contains("FROM"));
-            Assert.IsTrue(sql.Contains("Person") || sql.Contains("person"));
-            Assert.IsTrue(sql.Contains("Pet") || sql.Contains("pet"));
-        }
-
-        [TestMethod]
-        public void Join_OptimizedSyntax_WithWhereAndSelect_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var people = new SqlQuery<Person>(provider);
-            var personPet = people.Join<Pet, int>(
-                person => person.Id,
-                pet => pet.OwnerId
-            )
-            .Where(x => x.Left.Name == "Alice")
-            .Select(x => new PersonPet { PersonName = x.Left.Name, PetName = x.Right.Name });
-            var (sql, parameters) = personPet.ToSql();
-            Console.WriteLine(sql);
-            Assert.IsTrue(sql.Contains("WHERE"));
-            Assert.IsTrue(sql.Contains("PersonName"));
-            var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual("Alice", paramDict["p0"]);
-        }
-
-        [TestMethod]
-        public void MultipleJoins_OptimizedSyntax_GeneratesCorrectSql()
-        {
-            var provider = GetProvider();
-            var orders = new SqlQuery<Order>(provider);
-            // First join: Order + Customer => Pair<Order, Customer>
-            var orderCustomer = orders.Join<Customer, int>(
-                o => o.CustomerId,
-                c => c.Id
-            );
-            // Second join: Pair<Order, Customer> + Product => Pair<Pair<Order, Customer>, Product>
-            var orderCustomerProduct = orderCustomer.Join<Product, int>(
-                oc => oc.Left.ProductId,
-                p => p.Id
-            );
-            // Select projection from the nested pair
-            var query = orderCustomerProduct.Select(x => new OrderInfo
-            {
-                CustomerName = x.Left.Right.Name, // x.Left is Pair<Order, Customer>, x.Left.Right is Customer
-                ProductName = x.Right.Name
-            });
-            var (sql, parameters) = query.ToSql();
-            Console.WriteLine(sql);
-            Assert.IsTrue(sql.Contains("JOIN", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("Order", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("Customer", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("Product", StringComparison.OrdinalIgnoreCase));
-            Assert.IsTrue(sql.Contains("CustomerName", StringComparison.OrdinalIgnoreCase) || sql.Contains("ProductName", StringComparison.OrdinalIgnoreCase));
         }
 
     }

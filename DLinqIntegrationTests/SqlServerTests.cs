@@ -375,7 +375,7 @@ namespace DLinqIntegrationTests
                 dlinq.Insert(person);
             }
 
-            var query = dlinq.Select<Person>()
+            var query = dlinq.From<Person>()
                 .OrderBy(p => p.Age)
                 .Skip(2)
                 .Take(5)
@@ -386,15 +386,6 @@ namespace DLinqIntegrationTests
             Assert.IsTrue(results[0].Age >= results[1].Age || results[0].Age <= results[1].Age); // Ordered by Age
         }
 
-        [TestMethod]
-        public void QueryPersonPet_Join_Success()
-        {
-            var query = dlinq.QueryBuilder<Pet>()
-                .Join<Person, int?>(pet => pet.OwnerId , person => person.Id)
-                .Select(pet => pet.Left);
-            var results = dlinq.Query<Pet>(query).ToList();
-
-            Assert.IsTrue(results.Count > 0);
-        }
+        
     }
 }

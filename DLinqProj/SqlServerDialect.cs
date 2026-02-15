@@ -82,11 +82,15 @@ namespace DLinq
             }
             sb.Append(" FROM ");
             sb.Append(FormatTable(ast.Table, ast.Alias));
-            if (ast.Joins != null && ast.Joins.Count > 0)
+            // JOIN support
+            if (ast is SqlJoinSelectNode joinAst && joinAst.Joins != null)
             {
-                foreach (var join in ast.Joins)
+                foreach (var join in joinAst.Joins)
                 {
-                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table, join.Alias)} ON {FormatColumn(join.LeftColumn, ast.Alias)} = {FormatColumn(join.RightColumn, join.Alias)}");
+                    sb.Append($" {join.JoinType.ToUpper()} JOIN ");
+                    sb.Append(FormatTable(join.RightTable, join.RightAlias));
+                    sb.Append(" ON ");
+                    sb.Append(join.OnClause);
                 }
             }
             if (!string.IsNullOrEmpty(ast.WhereSql))

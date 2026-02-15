@@ -114,92 +114,6 @@ namespace DLinq
             throw new NotSupportedException("ToDeleteSql is only supported for SqlQuery using QueryProvider.");
         }
 
-        // Method-chaining Join implementation
-        public SqlQuery<TResult> Join<TJoin, TKey, TResult>(
-            SqlQuery<TJoin> inner,
-            Expression<Func<T, TKey>> outerKeySelector,
-            Expression<Func<TJoin, TKey>> innerKeySelector,
-            Expression<Func<T, TJoin, TResult>> resultSelector)
-        {
-            if (inner == null) throw new ArgumentNullException(nameof(inner));
-            if (outerKeySelector == null) throw new ArgumentNullException(nameof(outerKeySelector));
-            if (innerKeySelector == null) throw new ArgumentNullException(nameof(innerKeySelector));
-            if (resultSelector == null) throw new ArgumentNullException(nameof(resultSelector));
-
-            // Get the generic method definition from the closed generic type so the declaring type's generic
-            // parameter T is already closed. Then construct the concrete generic method for TJoin,TKey,TResult.
-            var methodDef = typeof(SqlQuery<T>)
-                .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .First(m => m.Name == nameof(Join) && m.IsGenericMethodDefinition && m.GetGenericArguments().Length == 3);
-
-            var method = methodDef.MakeGenericMethod(typeof(TJoin), typeof(TKey), typeof(TResult));
-
-            // Call as an instance method on this.Expression
-            var call = Expression.Call(
-                this.Expression,
-                method,
-                inner.Expression,
-                Expression.Quote(outerKeySelector),
-                Expression.Quote(innerKeySelector),
-                Expression.Quote(resultSelector)
-            );
-
-            return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
-        }
-
-        // Overload: Join without explicit inner SqlQuery parameter
-        public SqlQuery<TResult> Join<TJoin, TKey, TResult>(
-            Expression<Func<T, TKey>> outerKeySelector,
-            Expression<Func<TJoin, TKey>> innerKeySelector,
-            Expression<Func<T, TJoin, TResult>> resultSelector)
-        {
-            // Construct the inner SqlQuery<TJoin> using the same provider
-            //var inner = new SqlQuery<TJoin>(this.Provider as QueryProvider ?? throw new InvalidOperationException("Provider must be a QueryProvider."));
-            if (!(this.Provider is QueryProvider qp)) throw new InvalidOperationException("Provider must be a QueryProvider."); 
-            var inner = new SqlQuery<TJoin>(qp); 
-            return this.Join(inner, outerKeySelector, innerKeySelector, resultSelector);
-        }
-
-        // New Join overload for property-style access (Pair<T, TJoin>)
-        public SqlQuery<JoinResult<T, TJoin>> Join<TJoin, TKey>(
-            Expression<Func<T, TKey>> outerKeySelector,
-            Expression<Func<TJoin, TKey>> innerKeySelector)
-        {
-            if (outerKeySelector == null) throw new ArgumentNullException(nameof(outerKeySelector));
-            if (innerKeySelector == null) throw new ArgumentNullException(nameof(innerKeySelector));
-            if (!(this.Provider is QueryProvider qp)) throw new InvalidOperationException("Provider must be a QueryProvider.");
-            var inner = new SqlQuery<TJoin>(qp);
-
-            // Build expression: (outer, innerParam) => new Pair<T, TJoin>(outer, innerParam)
-            var outerParam = Expression.Parameter(typeof(T), "outer");
-            var innerParam = Expression.Parameter(typeof(TJoin), "inner");
-
-            var pairType = typeof(JoinResult<,>).MakeGenericType(typeof(T), typeof(TJoin));
-            var ctor = pairType.GetConstructor(new[] { typeof(T), typeof(TJoin) });
-            Expression newPair;
-            if (ctor != null)
-            {
-                newPair = Expression.New(ctor, outerParam, innerParam);
-            }
-            else
-            {
-                // fallback to parameterless + member init if ctor not found
-                var newExpr = Expression.New(pairType);
-                var leftMember = pairType.GetProperty(nameof(JoinResult<T, TJoin>.Left));
-                var rightMember = pairType.GetProperty(nameof(JoinResult<T, TJoin>.Right));
-                var bindings = new List<MemberBinding>();
-                if (leftMember != null) bindings.Add(Expression.Bind(leftMember, outerParam));
-                if (rightMember != null) bindings.Add(Expression.Bind(rightMember, innerParam));
-                newPair = Expression.MemberInit(newExpr, bindings);
-            }
-            var selector = Expression.Lambda<Func<T, TJoin, JoinResult<T, TJoin>>>(newPair, outerParam, innerParam);
-
-            // Reuse existing Join overload that accepts a resultSelector
-            var joined = this.Join(inner, outerKeySelector, innerKeySelector, selector);
-
-            return (SqlQuery<JoinResult<T, TJoin>>)(object)joined;
-        }
-
         public SqlQuery<T> Where(Expression<Func<T, bool>> predicate)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
@@ -227,21 +141,34 @@ namespace DLinq
 
             return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
         }
-    }
-
-    // Helper type to expose the joined items as properties (x.Left / x.Right)
-    public class JoinResult { }
-
-    public class JoinResult<TLeft, TRight>: JoinResult
-    {
-        public TLeft Left { get; set; }
-        public TRight Right { get; set; }
-
-        public JoinResult() { }
-        public JoinResult(TLeft left, TRight right)
+        public SqlQuery<JoinResult<T, TRight>> Join<TRight>(
+            SqlQuery<TRight> right,
+            Expression<Func<T, TRight, bool>> onPredicate)
         {
-            Left = left;
-            Right = right;
+            if (right == null) throw new ArgumentNullException(nameof(right));
+            if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
+
+            var joinResultType = typeof(JoinResult<,>).MakeGenericType(typeof(T), typeof(TRight));
+            var leftParam = Expression.Parameter(typeof(T), "l");
+            var rightParam = Expression.Parameter(typeof(TRight), "r");
+            var ctor = joinResultType.GetConstructor(new[] { typeof(T), typeof(TRight) });
+            var members = new MemberInfo[] {
+                joinResultType.GetProperty("Left"),
+                joinResultType.GetProperty("Right")
+            };
+            var newExpr = Expression.New(ctor, new Expression[] { leftParam, rightParam }, members);
+            var resultSelector = Expression.Lambda(newExpr, leftParam, rightParam);
+            // Compose a custom Join expression node for the translator
+            var call = Expression.Call(
+                typeof(Queryable),
+                "Join", // still use Join for recognizability
+                new[] { typeof(T), typeof(TRight), joinResultType },
+                this.Expression,
+                right.Expression,
+                Expression.Quote(onPredicate),
+                Expression.Quote(resultSelector)
+            );
+            return (SqlQuery<JoinResult<T, TRight>>)Provider.CreateQuery(call);
         }
     }
 }

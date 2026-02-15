@@ -17,17 +17,6 @@ namespace DLinq
         public int? Take { get; set; }
         public SqlFunctionSource FromFunction { get; set; }
         public List<(string Column, bool Descending)> OrderBy { get; set; } = new List<(string, bool)>();
-        public List<SqlJoinNode> Joins { get; set; } = new List<SqlJoinNode>();
-    }
-
-    public class SqlJoinNode
-    {
-        public string Table { get; set; }
-        public string Alias { get; set; } // NEW: auto-generated alias
-        public string LeftColumn { get; set; }
-        public string RightColumn { get; set; }
-        public string JoinType { get; set; }
-        public List<SqlJoinOnColumn> OnColumns { get; set; } = new();
     }
 
     public class SqlFunctionSource
@@ -44,14 +33,6 @@ namespace DLinq
         public bool IsSubQuery { get; set; } = false;
     }
 
-    public class SqlJoinOnColumn
-    {
-        public string LeftTable { get; set; }
-        public string LeftColumn { get; set; }
-        public string RightTable { get; set; }
-        public string RightColumn { get; set; }
-    }
-
     public class Column
     {
         public string? Schema { get; set; }
@@ -65,5 +46,18 @@ namespace DLinq
             Name = name;
             Alias = alias;
         }
+    }
+
+    public class SqlJoinSelectNode : SqlSelectNode
+    {
+        public List<SqlJoin> Joins { get; set; } = new List<SqlJoin>();
+    }
+
+    public class SqlJoin
+    {
+        public string JoinType { get; set; } = "INNER";
+        public string RightTable { get; set; }
+        public string RightAlias { get; set; }
+        public string OnClause { get; set; }
     }
 }

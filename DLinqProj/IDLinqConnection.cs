@@ -37,7 +37,7 @@ namespace DLinq
         Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate);
         Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery);
         void Rollback();
-        SqlQuery<T> Select<T>();
+        SqlQuery<T> From<T>();
         T? Update<T>(T entity, UpdateOptions? options = null);
         Task<T?> UpdateAsync<T>(T entity, UpdateOptions? options = null);
     }

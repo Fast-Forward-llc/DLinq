@@ -103,14 +103,15 @@ namespace DLinq
             {
                 sb.Append(FormatTable(ast.Table, ast.Alias));
             }
-            if (ast.Joins != null && ast.Joins.Count > 0)
+            // JOIN support
+            if (ast is SqlJoinSelectNode joinAst && joinAst.Joins != null)
             {
-                foreach (var join in ast.Joins)
+                foreach (var join in joinAst.Joins)
                 {
-                    var onClauses = join.OnColumns.Select(on =>
-                        $"{FormatColumn(on.LeftColumn, ast.Alias)} = {FormatColumn(on.RightColumn, join.Alias)}"
-                    );
-                    sb.Append($" {join.JoinType} JOIN {FormatTable(join.Table, join.Alias)} ON {string.Join(" AND ", onClauses)}");
+                    sb.Append($" {join.JoinType.ToUpper()} JOIN ");
+                    sb.Append(FormatTable(join.RightTable, join.RightAlias));
+                    sb.Append(" ON ");
+                    sb.Append(join.OnClause);
                 }
             }
             if (!string.IsNullOrEmpty(ast.WhereSql))

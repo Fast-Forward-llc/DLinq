@@ -24,13 +24,6 @@ namespace DLinq
 
         public IQueryable CreateQuery(Expression expression)
         {
-            // Handle Join method call for non-generic CreateQuery
-            if (expression is MethodCallExpression mce && mce.Method.Name == "Join")
-            {
-                var resultType = mce.Method.GetGenericArguments()[2]; // TResult
-                var queryType = typeof(SqlQuery<>).MakeGenericType(resultType);
-                return (IQueryable)Activator.CreateInstance(queryType, this, expression);
-            }
             var elementType = expression.Type.GetGenericArguments().First();
             var queryType2 = typeof(SqlQuery<>).MakeGenericType(elementType);
             return (IQueryable)Activator.CreateInstance(queryType2, this, expression);
@@ -38,11 +31,6 @@ namespace DLinq
 
         public IQueryable<TElement> CreateQuery<TElement>(Expression expression)
         {
-            // Handle Join method call for generic CreateQuery
-            if (expression is MethodCallExpression mce && mce.Method.Name == "Join")
-            {
-                return (IQueryable<TElement>)Activator.CreateInstance(typeof(SqlQuery<TElement>), this, expression);
-            }
             return new SqlQuery<TElement>(this, expression);
         }
 

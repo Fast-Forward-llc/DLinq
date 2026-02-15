@@ -18,7 +18,7 @@ namespace DLinq
 
     /// <summary>
     /// Translates LINQ expression trees into SQL statements using a provided SQL dialect.
-    /// Supports SELECT, INSERT, UPDATE, and basic JOIN/ORDER/WHERE/IN operations.
+    /// Supports SELECT, INSERT, UPDATE, and basic ORDER/WHERE/IN operations.
     /// </summary>
     public class QueryTranslator
     {
@@ -81,12 +81,12 @@ namespace DLinq
                     entityType = entityType.GetGenericArguments()[0];
                 }
             }
-            var isJoinResultType = IsDerivedFromGenericType(entityType, typeof(JoinResult));
-            if (entityType != null && isJoinResultType)
-            {
-                var leftType = entityType.GetGenericArguments()[0];
-                entityType = GetEntityType(leftType);
-            }
+            //var isJoinResultType = IsDerivedFromGenericType(entityType, typeof(JoinResult));
+            //if (entityType != null && isJoinResultType)
+            //{
+            //    var leftType = entityType.GetGenericArguments()[0];
+            //    entityType = GetEntityType(leftType);
+            //}
             return entityType;
         }
 
@@ -253,15 +253,12 @@ namespace DLinq
             int? take = null;
             SqlFunctionSource fromFunction = null;
             var orderBy = new List<(string Column, bool Descending)>();
-            var joins = new List<SqlJoinNode>();
             string whereSql = null;
             Type entityType = null;
-
-            // Declare columns here so it can be set by projection
             List<Column> columns = null;
             var primaryKeys = new List<string>();
-
             Expression current = expression;
+            List<SqlJoin> joins = null;
             while (current is MethodCallExpression mce)
             {
                 switch (mce.Method.Name)
@@ -281,11 +278,13 @@ namespace DLinq
                     case "ThenByDescending":
                         HandleOrderBy(mce, orderBy, ref current);
                         break;
-                    case "Join":
-                        HandleJoinWithAlias(mce, joins, ref current, context);
-                        break;
                     case "Where":
                         HandleWhere(mce, parameters, ref whereSql, ref entityType, ref current, context);
+                        break;
+                    case "Join":
+                        if (joins == null) joins = new List<SqlJoin>();
+                        HandleJoin(mce, joins, context);
+                        current = mce.Arguments[0];
                         break;
                     case "Select":
                         var selectorLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
@@ -301,32 +300,17 @@ namespace DLinq
                         break;
                 }
             }
-
-            // Assign aliases to joins
-            foreach (var join in joins)
-            {
-                if (string.IsNullOrEmpty(join.Alias))
-                {
-                    join.Alias = GetAliasForTable(join.Table, context);
-                }
-            }
-
-            // Try to infer entityType if not set by Where
             if (entityType == null && current != null)
             {
                 var type = GetEntityType(current.Type);
                 entityType = type;
             }
-
             if (entityType == null)
             {
                 throw new InvalidOperationException("Unable to determine entity type for SQL translation. Ensure your query targets a valid entity type.");
             }
-
             var tableName = GetEntityTableName(entityType);
-            var tableAlias = GetAliasForTable(tableName, context, joins.Count > 0);
-
-            // Only build columns from entityType if not set by projection
+            var tableAlias = GetAliasForTable(tableName, context, false);
             if (columns == null)
             {
                 var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
@@ -346,127 +330,65 @@ namespace DLinq
             {
                 primaryKeys = new List<string>();
             }
-
-            ast = new SqlSelectNode
+            if (joins != null && joins.Count > 0)
             {
-                Table = tableName,
-                Alias = tableAlias,
-                Columns = columns,
-                Where = null!,
-                WhereSql = whereSql!,
-                PrimaryKeys = primaryKeys,
-                Skip = skip,
-                Take = take,
-                FromFunction = fromFunction!,
-                OrderBy = orderBy,
-                Joins = joins
-            };
-           
-
-            //// If there is a whereSql, re-parse it with alias-aware predicate
-            //if (!string.IsNullOrEmpty(whereSql))
-            //{
-            //    // Re-parse the last Where clause with alias-aware predicate
-            //    var whereLambda = (LambdaExpression)((UnaryExpression)((MethodCallExpression)expression).Arguments[1]).Operand;
-            //    ast.WhereSql = ParsePredicate(whereLambda.Body, parameters, entityType, mainAlias);
-            //}
-
-            return _dialect.SelectStatement(ast, parameters);
-        }
-
-        // New join handler to assign aliases
-        private static void HandleJoinWithAlias(MethodCallExpression mce, List<SqlJoinNode> joins, ref Expression current, TranslateContext context)
-        {
-            Expression outer;
-            Expression inner;
-            LambdaExpression outerKeyLambda;
-            LambdaExpression innerKeyLambda;
-
-            if (mce.Object != null)
-            {
-                outer = mce.Object;
-                inner = mce.Arguments[0];
-                outerKeyLambda = GetLambda(mce.Arguments[1]);
-                innerKeyLambda = GetLambda(mce.Arguments[2]);
+                var joinAst = new SqlJoinSelectNode
+                {
+                    Table = tableName,
+                    Alias = tableAlias,
+                    Columns = columns,
+                    Where = null!,
+                    WhereSql = whereSql!,
+                    PrimaryKeys = primaryKeys,
+                    Skip = skip,
+                    Take = take,
+                    FromFunction = fromFunction!,
+                    OrderBy = orderBy,
+                    Joins = joins
+                };
+                ast = joinAst;
             }
             else
             {
-                outer = mce.Arguments[0];
-                inner = mce.Arguments[1];
-                outerKeyLambda = GetLambda(mce.Arguments[2]);
-                innerKeyLambda = GetLambda(mce.Arguments[3]);
-            }
-
-            static LambdaExpression GetLambda(Expression arg)
-            {
-                if (arg is LambdaExpression le)
-                    return le;
-                if (arg is UnaryExpression ue && ue.NodeType == ExpressionType.Quote && ue.Operand is LambdaExpression quotedLambda)
-                    return quotedLambda;
-                throw new NotSupportedException($"Join key selector argument must be a lambda expression (possibly quoted). Got: {arg}");
-            }
-
-            static MemberExpression FindMember(Expression expr)
-            {
-                while (expr is UnaryExpression ue &&
-                       (ue.NodeType == ExpressionType.Convert ||
-                        ue.NodeType == ExpressionType.ConvertChecked ||
-                        ue.NodeType == ExpressionType.Quote))
+                ast = new SqlSelectNode
                 {
-                    expr = ue.Operand;
-                }
-                if (expr is MemberExpression me)
-                    return me;
-                throw new NotSupportedException($"Join key selectors must be or contain a member expression. Got: {expr}");
+                    Table = tableName,
+                    Alias = tableAlias,
+                    Columns = columns,
+                    Where = null!,
+                    WhereSql = whereSql!,
+                    PrimaryKeys = primaryKeys,
+                    Skip = skip,
+                    Take = take,
+                    FromFunction = fromFunction!,
+                    OrderBy = orderBy
+                };
             }
-
-            var outerKeyMember = FindMember(outerKeyLambda.Body);
-            var innerKeyMember = FindMember(innerKeyLambda.Body);
-
-            if (outerKeyMember.Type != innerKeyMember.Type)
-                throw new InvalidOperationException($"Join key types do not match: {outerKeyMember.Type} vs {innerKeyMember.Type}");
-
-            var outerType = outerKeyMember.Expression.Type;
-            var innerType = innerKeyMember.Expression.Type;
-            var outerTable = outerType.GetCustomAttribute<TableAttribute>()?.Name ?? outerType.Name;
-            var innerTable = innerType.GetCustomAttribute<TableAttribute>()?.Name ?? innerType.Name;
-
-            var outerCol = outerKeyMember.Member.Name;
-            var innerCol = innerKeyMember.Member.Name;
-
-            var joinAlias = GetAliasForTable(innerTable, context);
-
-            joins.Add(new SqlJoinNode
-            {
-                Table = innerTable,
-                Alias = joinAlias,
-                LeftColumn = outerCol,
-                RightColumn = innerCol,
-                JoinType = "INNER",
-                OnColumns = new List<SqlJoinOnColumn>
-                {
-                    new SqlJoinOnColumn
-                    {
-                        LeftTable = outerTable,
-                        LeftColumn = outerCol,
-                        RightTable = innerTable,
-                        RightColumn = innerCol
-                    }
-                }
-            });
-
-            current = outer;
+            return _dialect.SelectStatement(ast, parameters);
         }
 
-        private void HandleWhere(MethodCallExpression mce, List<object> parameters, ref string whereSql, ref Type entityType, ref Expression current, TranslateContext context)
+        private void HandleJoin(MethodCallExpression mce, List<SqlJoin> joins, TranslateContext context)
         {
-            var whereLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
-            entityType = GetEntityType(mce.Arguments[0].Type.GetGenericArguments()[0]); //.Value.ElementType);
-            var tableName = GetEntityTableName(entityType);
-            var tableAlias = GetAliasForTable(tableName, context);
-            var thisWhereSql = ParsePredicate(whereLambda.Body, parameters, entityType, context);
-            whereSql = whereSql == null ? thisWhereSql : $"({thisWhereSql}) AND ({whereSql})";
-            current = mce.Arguments[0];
+            // mce.Arguments: outer, inner, onPredicate, resultSelector
+            var rightQueryExpr = mce.Arguments[1];
+            var onPredicate = (LambdaExpression)((UnaryExpression)mce.Arguments[2]).Operand;
+            // Use the predicate parser to generate the ON clause
+            // We assume the left and right types are the first two generic arguments of the lambda
+            var leftType = onPredicate.Parameters[0].Type;
+            var rightType = onPredicate.Parameters[1].Type;
+            var leftTable = GetEntityTableName(leftType);
+            var rightTable = GetEntityTableName(rightType);
+            var leftAlias = GetAliasForTable(leftTable, context);
+            var rightAlias = GetAliasForTable(rightTable, context);
+            // Use the context and both types for parsing
+            var onSql = ParsePredicate(onPredicate.Body, new List<object>(), leftType, context);
+            joins.Add(new SqlJoin
+            {
+                JoinType = "INNER",
+                RightTable = rightTable,
+                RightAlias = rightAlias,
+                OnClause = onSql
+            });
         }
 
         /// <summary>
@@ -899,6 +821,17 @@ namespace DLinq
             var colName = member.Member.Name;
             bool descending = mce.Method.Name == "OrderByDescending" || mce.Method.Name == "ThenByDescending";
             orderBy.Insert(0, (colName, descending));
+            current = mce.Arguments[0];
+        }
+
+        private void HandleWhere(MethodCallExpression mce, List<object> parameters, ref string whereSql, ref Type entityType, ref Expression current, TranslateContext context)
+        {
+            var whereLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
+            entityType = GetEntityType(mce.Arguments[0].Type.GetGenericArguments()[0]);
+            var tableName = GetEntityTableName(entityType);
+            var tableAlias = GetAliasForTable(tableName, context);
+            var thisWhereSql = ParsePredicate(whereLambda.Body, parameters, entityType, context);
+            whereSql = whereSql == null ? thisWhereSql : $"({thisWhereSql}) AND ({whereSql})";
             current = mce.Arguments[0];
         }
     }
