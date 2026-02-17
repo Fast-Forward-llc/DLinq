@@ -275,25 +275,22 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_MultipleAndSetEntity_GeneratesSql()
+        public void Join_MultipleWithSurrogates_GeneratesSql()
         {
-            var p = new Person3();
-            var pt = new Pet();
-            var cu = new CreatedByUser();
-            var mu = new ModifiedByUser();
             var provider = GetProvider();
             var query = new SqlQuery<Person3>(provider)
                 .Where(p => p.Age > 18)
-                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
-                .Join<ModifiedByUser>((prevJoin, user) => prevJoin.Left.ModifiedByUserId == user.Id)
-                //.Select(j => new { PersonName = j.Left.Left.Name, CreatedByUser = j.Left.Right.Name, ModifiedByUser = j.Right.Name });
-                .Select(j => new { PersonName = p.Name, CreatedByUser = cu.Name, ModifiedByUser = mu.Name });
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<Person3, Pet, CreatedByUser>((person, createdByUser) => person.CreatedByUserId == createdByUser.Id)
+                .Join<Person3, Pet, CreatedByUser, ModifiedByUser>((person, modifiedByUser) => person.ModifiedByUserId == modifiedByUser.Id)
+                .Select<Person3, Pet, CreatedByUser, ModifiedByUser, object>((person, pet, createdByUser, modifiedByUser) => new { PersonName = person.Name, PetName = pet.Name, CreatedByUser = createdByUser.Name, ModifiedByUser = modifiedByUser.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
-                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t2\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
-                + "INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"ModifiedByUserId\" = \"t2\".\"Id\" "
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t4\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
+                + "INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
                 + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
+                + "INNER JOIN \"Users\" AS \"t4\" ON \"t1\".\"ModifiedByUserId\" = \"t4\".\"Id\" "
                 + "WHERE \"t1\".\"Age\" > @p0"
                 , sql);
             Assert.IsTrue(sql.Contains("WHERE"));

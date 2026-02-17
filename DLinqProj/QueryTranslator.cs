@@ -206,6 +206,185 @@ namespace DLinq
                     return ParseContainsPredicate(methodCall, parameters, entityType, context);
                 case UnaryExpression unary when unary.NodeType == ExpressionType.Not:
                     return ParseNotContainsPredicate(unary, parameters, entityType, context);
+                case InvocationExpression invocation:
+                    {
+                        // Try to resolve the invoked lambda expression (direct LambdaExpression or a constant that contains an Expression)
+                        LambdaExpression? lambda = invocation.Expression as LambdaExpression;
+
+                        // Try to resolve common wrapped shapes (quote/unary, constant/member/methodcall) before other strategies
+                        if (lambda == null)
+                        {
+                            lambda = ResolveLambdaFromExpression(invocation.Expression);
+                        }
+
+                        if (lambda == null)
+                        {
+                            // existing evaluatedObj / delegate / member evaluation / compile fallbacks...
+                            var evaluatedObj = GetValueFromExpression(invocation.Expression);
+
+                            // If the evaluator returned a LambdaExpression or an Expression carrying a LambdaExpression, use it.
+                            if (evaluatedObj is LambdaExpression le)
+                            {
+                                lambda = le;
+                            }
+                            else if (evaluatedObj is Expression ex && ex is LambdaExpression le2)
+                            {
+                                lambda = le2;
+                            }
+                            else if (evaluatedObj is Delegate del)
+                            {
+                                // If the delegate has no parameters, try invoking it to obtain an inner Lambda/Expression (best-effort).
+                                try
+                                {
+                                    if (del.Method.GetParameters().Length == 0)
+                                    {
+                                        var inner = del.DynamicInvoke();
+                                        if (inner is LambdaExpression ile)
+                                            lambda = ile;
+                                        else if (inner is Expression iex && iex is LambdaExpression ile2)
+                                            lambda = ile2;
+                                    }
+                                }
+                                catch
+                                {
+                                    // ignore; fall through to other strategies
+                                }
+                            }
+
+                            // If still not found, try the existing member-expression evaluation fallback (closure fields/properties).
+                            if (lambda == null && invocation.Expression is MemberExpression memExpr)
+                            {
+                                try
+                                {
+                                    var value = EvaluateMemberExpression(memExpr);
+                                    if (value is LambdaExpression le3)
+                                    {
+                                        lambda = le3;
+                                    }
+                                    else if (value is Expression ex2 && ex2 is LambdaExpression le4)
+                                    {
+                                        lambda = le4;
+                                    }
+                                    else if (value is Delegate d2)
+                                    {
+                                        var target = d2.Target;
+                                        if (target != null)
+                                        {
+                                            // Look for an Expression field/property on the delegate target
+                                            var exprField = target.GetType()
+                                                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                                                .FirstOrDefault(f => typeof(Expression).IsAssignableFrom(f.FieldType));
+                                            if (exprField != null)
+                                            {
+                                                var fval = exprField.GetValue(target) as Expression;
+                                                if (fval is LambdaExpression le5)
+                                                    lambda = le5;
+                                            }
+
+                                            if (lambda == null)
+                                            {
+                                                var exprProp = target.GetType()
+                                                    .GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                                                    .FirstOrDefault(p => typeof(Expression).IsAssignableFrom(p.PropertyType));
+                                                if (exprProp != null)
+                                                {
+                                                    var pval = exprProp.GetValue(target) as Expression;
+                                                    if (pval is LambdaExpression le6)
+                                                        lambda = le6;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                catch
+                                {
+                                    // ignore and fall through to next strategy
+                                }
+                            }
+
+                            // Last-resort: attempt to compile & invoke the invocation.Expression if it doesn't contain ParameterExpression nodes.
+                            if (lambda == null)
+                            {
+                                try
+                                {
+                                    var obj = Expression.Lambda(invocation.Expression).Compile().DynamicInvoke();
+                                    if (obj is LambdaExpression ole)
+                                    {
+                                        lambda = ole;
+                                    }
+                                    else if (obj is Delegate od)
+                                    {
+                                        try
+                                        {
+                                            if (od.Method.GetParameters().Length == 0)
+                                            {
+                                                var inner = od.DynamicInvoke();
+                                                if (inner is LambdaExpression ile3)
+                                                    lambda = ile3;
+                                                else if (inner is Expression iex3 && iex3 is LambdaExpression ile4)
+                                                    lambda = ile4;
+                                            }
+                                        }
+                                        catch
+                                        {
+                                            // ignore
+                                        }
+                                    }
+                                    else if (obj is Expression oex && oex is LambdaExpression ole2)
+                                    {
+                                        lambda = ole2;
+                                    }
+                                }
+                                catch
+                                {
+                                    // ignore; leave lambda null and fall through to throwing below
+                                }
+                            }
+                        }
+
+                        // If the resolved lambda itself returns another Lambda (e.g., Expression<Func<Func<...>>>),
+                        // unwrap nested/quoted lambda expression wrappers until we reach the actual predicate body.
+                        if (lambda != null)
+                        {
+                            // Unwrap common wrapper shapes: UnaryExpression quote, ConstantExpression carrying a LambdaExpression, or a direct nested LambdaExpression body.
+                            bool unwrapped;
+                            do
+                            {
+                                unwrapped = false;
+                                if (lambda.Body is UnaryExpression unary && unary.Operand is LambdaExpression innerUnary)
+                                {
+                                    lambda = innerUnary;
+                                    unwrapped = true;
+                                }
+                                else if (lambda.Body is ConstantExpression constExpr && constExpr.Value is LambdaExpression innerConst)
+                                {
+                                    lambda = innerConst;
+                                    unwrapped = true;
+                                }
+                                else if (lambda.Body is LambdaExpression innerBody)
+                                {
+                                    lambda = innerBody;
+                                    unwrapped = true;
+                                }
+                            } while (unwrapped);
+                        }
+
+                        if (lambda != null)
+                        {
+                            // Build parameter -> argument map and replace parameters in the lambda body
+                            var map = new Dictionary<ParameterExpression, Expression>();
+                            for (int i = 0; i < lambda.Parameters.Count && i < invocation.Arguments.Count; i++)
+                            {
+                                map[lambda.Parameters[i]] = invocation.Arguments[i];
+                            }
+
+                            var replacedBody = new ParameterReplacer(map).Visit(lambda.Body);
+                            // Recurse to parse the inlined expression
+                            return ParsePredicate(replacedBody, parameters, entityType, context);
+                        }
+
+                        throw new NotSupportedException("Unsupported invocation predicate.");
+                    }
                 default:
                     throw new NotSupportedException("Unsupported predicate expression.");
             }
@@ -972,6 +1151,23 @@ namespace DLinq
             return keyInfo;
         }
 
+        private class ParameterReplacer : ExpressionVisitor
+        {
+            private readonly Dictionary<ParameterExpression, Expression> _map;
+
+            public ParameterReplacer(Dictionary<ParameterExpression, Expression> map)
+            {
+                _map = map ?? new Dictionary<ParameterExpression, Expression>();
+            }
+
+            protected override Expression VisitParameter(ParameterExpression node)
+            {
+                if (_map.TryGetValue(node, out var replacement))
+                    return Visit(replacement);
+                return base.VisitParameter(node);
+            }
+        }
+
         private static bool IsDerivedFromGenericType(Type type, Type genericTypeDefinition)
         {
             while (type != null && type != typeof(object))
@@ -1146,5 +1342,113 @@ namespace DLinq
             whereSql = whereSql == null ? thisWhereSql : $"({thisWhereSql}) AND ({whereSql})";
             current = mce.Arguments[0];
         }
+
+        private static object? EvaluateMemberExpression(MemberExpression memberExpr)
+        {
+            // Evaluate the expression's target (the object instance)
+            object? target = null;
+            if (memberExpr.Expression != null)
+            {
+                if (memberExpr.Expression is ConstantExpression constExpr)
+                {
+                    target = constExpr.Value;
+                }
+                else
+                {
+                    // Recursively evaluate the target
+                    target = GetValueFromExpression(memberExpr.Expression);
+                }
+            }
+
+            // Get the value of the member (field or property)
+            if (memberExpr.Member is FieldInfo field)
+                return field.GetValue(target);
+            if (memberExpr.Member is PropertyInfo prop)
+                return prop.GetValue(target);
+
+            throw new NotSupportedException("Unsupported member type in EvaluateMemberExpression.");
+        }
+
+        // Try to resolve a LambdaExpression that may be wrapped/quoted inside other expression shapes.
+// This performs a best-effort search (does not compile arbitrary expressions) and tries:
+//  - direct LambdaExpression
+//  - Unary/Quote -> operand
+//  - ConstantExpression whose Value is a LambdaExpression or an Expression carrying one
+//  - MemberExpression evaluated via EvaluateMemberExpression
+//  - MethodCallExpression: try evaluating or search object/arguments
+private LambdaExpression? ResolveLambdaFromExpression(Expression? expr)
+{
+    if (expr == null) return null;
+
+    switch (expr)
+    {
+        case LambdaExpression le:
+            return le;
+        case UnaryExpression ue:
+            // e.g. quoted lambda: Expression.Quote(...)
+            return ResolveLambdaFromExpression(ue.Operand);
+        case ConstantExpression ce:
+            if (ce.Value is LambdaExpression cle) return cle;
+            if (ce.Value is Expression ex && ex is LambdaExpression cle2) return cle2;
+            return null;
+        case MemberExpression mem:
+            // Try to evaluate the member (closure field/property) and see if it holds a Lambda/Expression/Delegate
+            try
+            {
+                var val = EvaluateMemberExpression(mem);
+                if (val is LambdaExpression ml) return ml;
+                if (val is Expression mex && mex is LambdaExpression ml2) return ml2;
+                if (val is Delegate d && d.Target != null)
+                {
+                    // Look for an Expression field or property on the delegate target as before;
+                    var target = d.Target;
+                    var exprField = target.GetType()
+                        .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                        .FirstOrDefault(f => typeof(Expression).IsAssignableFrom(f.FieldType));
+                    if (exprField != null)
+                    {
+                        var fval = exprField.GetValue(target) as Expression;
+                        if (fval is LambdaExpression flev) return flev;
+                    }
+                    var exprProp = target.GetType()
+                        .GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                        .FirstOrDefault(p => typeof(Expression).IsAssignableFrom(p.PropertyType));
+                    if (exprProp != null)
+                    {
+                        var pval = exprProp.GetValue(target) as Expression;
+                        if (pval is LambdaExpression plev) return plev;
+                    }
+                }
+            }
+            catch
+            {
+                // ignore evaluation errors; fall through to try inner expression
+            }
+            // fall back to trying the member's target expression (e.g. nested member chains)
+            return ResolveLambdaFromExpression(mem.Expression);
+        case MethodCallExpression mcall:
+            // Try to evaluate call if it's safe (GetValueFromExpression will return null if the expression contains ParameterExpression)
+            try
+            {
+                var val = GetValueFromExpression(mcall);
+                if (val is LambdaExpression ml) return ml;
+                if (val is Expression mex && mex is LambdaExpression ml2) return ml2;
+            }
+            catch { /* ignore */ }
+
+            // Otherwise search object and arguments for an embedded LambdaExpression
+            var candidate = ResolveLambdaFromExpression(mcall.Object);
+            if (candidate != null) return candidate;
+            foreach (var a in mcall.Arguments)
+            {
+                candidate = ResolveLambdaFromExpression(a);
+                if (candidate != null) return candidate;
+            }
+            return null;
+
+        default:
+            return null;
+    }
+}
     }
 }
