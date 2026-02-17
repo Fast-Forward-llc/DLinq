@@ -390,7 +390,7 @@ namespace DLinq
                 var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
                 #if DEBUG_SQL
-                            Console.WriteLine($"Executing query: {sql}");
+                            Console.WriteLine($"Executing query: {sql}\r\n{JsonSerializer.Serialize(parameters)}");
                 #endif
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }

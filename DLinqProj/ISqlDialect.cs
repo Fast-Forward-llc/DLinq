@@ -6,7 +6,7 @@ namespace DLinq
     public interface ISqlDialect
     {
         string FormatTable(string tableName, string? alias = null);
-        string FormatColumn(string columnName, string? tableAlias = null);
+        string FormatColumn(string columnName, string? tableAlias = null, bool isLiteralValue = false);
         string ParameterPlaceholder(int index);
         string SelectStatement(SqlSelectNode ast, List<object> parameters);
         string InsertStatement(string tableName, List<string> columns, List<string> paramNames, InsertOptions options);

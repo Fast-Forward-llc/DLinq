@@ -21,7 +21,27 @@ namespace DLinqTests
             public int Id { get; set; }
             public string Name { get; set; }
             public int Age { get; set; }
+            public int CreatedByUserId { get; set; } = 1;
+            public int ModifiedByUserId { get; set; } = 1;
         }
+
+        [Table("person")]
+        private class Person3 : Person
+        {
+            public int CreatedByUserId { get; set; } = 1;
+            public int ModifiedByUserId { get; set; } = 1;
+        }
+
+        [Table("Users")]
+        public class CreatedByUser
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        public class ModifiedByUser : CreatedByUser { }
 
         private class Pet
         {
@@ -184,6 +204,100 @@ namespace DLinqTests
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(1, paramDict["@p0"]);
+        }
+
+        [TestMethod]
+        public void Join_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\" FROM \"Person\" AS \"t1\" "
+                +"INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\"", sql);
+        }
+
+        [TestMethod]
+        public void Join_WithMultipleConditions_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
+                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\" FROM \"Person\" AS \"t1\" "
+                +"INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\") AND (\"t2\".\"Name\" IS NOT NULL)"
+                , sql);
+        }
+
+        [TestMethod]
+        public void Join_ChainedWithWhereAndSelect_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Where(j => j.Left.Age > 18)
+                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\" FROM \"Person\" AS \"t1\" "
+                +"INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
+                +"WHERE \"t1\".\"Age\" > @p0"
+                , sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("Age"));
+        }
+
+        [TestMethod]
+        public void Join_MultipleOfSameTable_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person3>(provider)
+                .Where(p => p.Age > 18)
+                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
+                .Join<ModifiedByUser>((prevJoin, user) => prevJoin.Left.ModifiedByUserId == user.Id)
+                .Select(j => new { PersonName = j.Left.Left.Name, CreatedByUser = j.Left.Right.Name, ModifiedByUser = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t2\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
+                +"INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"ModifiedByUserId\" = \"t2\".\"Id\" "
+                +"INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
+                +"WHERE \"t1\".\"Age\" > @p0"
+                , sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("Age"));
+        }
+
+        [TestMethod]
+        public void Join_MultipleAndSetEntity_GeneratesSql()
+        {
+            var p = new Person3();
+            var pt = new Pet();
+            var cu = new CreatedByUser();
+            var mu = new ModifiedByUser();
+            var provider = GetProvider();
+            var query = new SqlQuery<Person3>(provider)
+                .Where(p => p.Age > 18)
+                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
+                .Join<ModifiedByUser>((prevJoin, user) => prevJoin.Left.ModifiedByUserId == user.Id)
+                //.Select(j => new { PersonName = j.Left.Left.Name, CreatedByUser = j.Left.Right.Name, ModifiedByUser = j.Right.Name });
+                .Select(j => new { PersonName = p.Name, CreatedByUser = cu.Name, ModifiedByUser = mu.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t2\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
+                + "INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"ModifiedByUserId\" = \"t2\".\"Id\" "
+                + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
+                + "WHERE \"t1\".\"Age\" > @p0"
+                , sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("Age"));
         }
 
         [Table("DummyTable")]

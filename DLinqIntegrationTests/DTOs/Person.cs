@@ -20,7 +20,7 @@ namespace DLinqIntegrationTests.DTOs
     }
 
     [Table("Person")]
-    public class Person2: Person;
+    public class Person2: Person;  
 
     public class PersonUUID
     {

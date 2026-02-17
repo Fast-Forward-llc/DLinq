@@ -55,9 +55,10 @@ namespace DLinq
             }
         }
 
-        public string FormatColumn(string columnName, string? tableAlias = null)
+        public string FormatColumn(string columnName, string? tableAlias = null, bool isLiteralValue = false)
         {
             if (string.IsNullOrWhiteSpace(columnName)) return columnName;
+            if (isLiteralValue) return columnName;
             string escapedColumnName = FormatIdentifier(columnName.Replace("\"", "\"\""));
             if (!string.IsNullOrWhiteSpace(tableAlias))
                 return $"{FormatTable(tableAlias)}.\"{escapedColumnName}\"";
@@ -82,7 +83,7 @@ namespace DLinq
             {
                 sb.Append(string.Join(", ", ast.Columns.Select(c =>
                 {
-                    var col = FormatColumn(c.Name, c.Table ?? ast.Alias);
+                    var col = FormatColumn(c.Name, c.Table ?? ast.Alias, c.IsLiteralValue);
                     var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
                     return $"{col}{alias}";
                 })));

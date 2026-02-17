@@ -39,12 +39,14 @@ namespace DLinq
         public string Table { get; set; }
         public string Name { get; set; }
         public string? Alias { get; set; }
-        public Column(string? schema, string table, string name, string? alias = null)
+        public bool IsLiteralValue { get; set; } = false; // indicates if this column represents a literal value instead of a table column
+        public Column(string? schema, string table, string name, string? alias = null, bool isLiteralValue = false)
         {
             Schema = schema;
             Table = table;
             Name = name;
             Alias = alias;
+            IsLiteralValue = isLiteralValue;
         }
     }
 

@@ -15,7 +15,7 @@ namespace DLinqTests
             Assert.AreEqual(dialect, provider.Translator.Dialect);
         }
 
-        private class TestDialect : ISqlDialect
+        private class TestDialect : DummyDialect
         {
             public string FormatTable(string tableName) => tableName;
             public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";

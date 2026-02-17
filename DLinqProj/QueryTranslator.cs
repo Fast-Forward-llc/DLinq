@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Dynamic;
+using System.Globalization;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Dynamic;
-using System.Linq;
 
 namespace DLinq
 {
@@ -38,25 +39,105 @@ namespace DLinq
         /// </summary>
         public ISqlDialect Dialect => _dialect;
 
-        // Helper to get the correct alias for a table name
-        private static string GetAliasForTable(string tableName, TranslateContext context, bool addIfNotFound = true)
+        // Helper to get the correct alias for an entity type (by full name)
+        private static string GetAliasForEntity(Type entityType, TranslateContext context, bool addIfNotFound = true)
         {
-            if (!context.TableAliasMap.TryGetValue(tableName, out var alias) && addIfNotFound)
+            var entityKey = entityType.FullName!;
+            if (!context.TableAliasMap.TryGetValue(entityKey, out var alias) && addIfNotFound)
             {
                 alias = context.AliasGen.Next();
-                context.TableAliasMap[tableName] = alias;
+                context.TableAliasMap[entityKey] = alias;
             }
-            return alias!; // return the alias instead of tableName
+            return alias!;
+        }
+
+        private static string GetAliasForMember(MemberExpression memberExpr, TranslateContext context)
+        {
+            // Walk up to the root ParameterExpression
+            //Expression expr = memberExpr.Expression;
+            //while (expr is MemberExpression innerMember)
+            //    expr = innerMember.Expression;
+
+            //if (expr is ParameterExpression param && context.ParameterAliasMap.TryGetValue(param, out var alias))
+            //    return alias;
+
+            // Fallback: use entity type as before, but unwrap JoinResult<TLeft,TRight> to the left entity so aliases are stable
+            var entityType = memberExpr.Expression?.Type;
+            if (entityType != null && entityType.IsGenericType && entityType.GetGenericTypeDefinition() == typeof(JoinResult<,>))
+            {
+                // use the left side of JoinResult<,> to match other resolution logic
+                entityType = entityType.GetGenericArguments()[0];
+            }
+            return entityType != null ? GetAliasForEntity(entityType, context) : "";
         }
 
         // Helper to evaluate any expression (variable, property, constant, etc.)
         private static object GetValueFromExpression(Expression expr)
         {
+            if (expr == null)
+                return null;
+
+            // If the expression contains any ParameterExpression nodes, it is a column/reference
+            // coming from the query lambda (e.g. "pet.OwnerId"). Don't try to evaluate/compile it
+            // here — let the higher-level translator treat it as a column reference.
+            if (ExpressionContainsParameter(expr))
+                return null;
+
             if (expr is ConstantExpression c)
                 return c.Value;
+
             var lambda = Expression.Lambda(expr);
             var compiled = lambda.Compile();
             return compiled.DynamicInvoke();
+        }
+
+        // New helper: returns true if the expression can be evaluated to a constant value (including null).
+        private static bool TryGetValueFromExpression(Expression expr, out object value)
+        {
+            value = null;
+            if (expr == null)
+            {
+                value = null;
+                return true;
+            }
+
+            // If the expression contains any ParameterExpression nodes, treat it as non-constant
+            if (ExpressionContainsParameter(expr))
+                return false;
+
+            if (expr is ConstantExpression c)
+            {
+                value = c.Value;
+                return true;
+            }
+
+            var lambda = Expression.Lambda(expr);
+            var compiled = lambda.Compile();
+            value = compiled.DynamicInvoke();
+            return true;
+        }
+
+        private static bool ExpressionContainsParameter(Expression expr)
+        {
+            // Fast path for the common case of a direct ParameterExpression
+            if (expr is ParameterExpression)
+                return true;
+
+            // Walk the tree and detect any ParameterExpression nodes
+            var finder = new ParameterFinder();
+            finder.Visit(expr);
+            return finder.Found;
+        }
+
+        private class ParameterFinder : ExpressionVisitor
+        {
+            public bool Found { get; private set; }
+            protected override Expression VisitParameter(ParameterExpression node)
+            {
+                Found = true;
+                // we can stop early but ExpressionVisitor doesn't provide cancellation, so just mark and continue
+                return base.VisitParameter(node);
+            }
         }
 
         private static string GetEntityTableName(Type entityType)
@@ -70,9 +151,13 @@ namespace DLinq
 
         private Type GetEntityType(Type entityType)
         {
+            if (entityType == null) return null;
+
+            // Handle common wrapper types first (SqlQuery<T>, IQueryable<T>, etc.)
             if (entityType.IsGenericType)
             {
-                if (entityType.GetGenericTypeDefinition() == typeof(SqlQuery<>))
+                var genDef = entityType.GetGenericTypeDefinition();
+                if (genDef == typeof(SqlQuery<>))
                 {
                     entityType = entityType.GetGenericArguments().FirstOrDefault();
                 }
@@ -80,13 +165,26 @@ namespace DLinq
                 {
                     entityType = entityType.GetGenericArguments()[0];
                 }
+                // If the type itself is JoinResult<TLeft,TRight>, treat the query entity as the left entity.
+                else if (genDef == typeof(JoinResult<,>))
+                {
+                    var leftType = entityType.GetGenericArguments()[0];
+                    entityType = GetEntityType(leftType);
+                }
             }
-            //var isJoinResultType = IsDerivedFromGenericType(entityType, typeof(JoinResult));
-            //if (entityType != null && isJoinResultType)
-            //{
-            //    var leftType = entityType.GetGenericArguments()[0];
-            //    entityType = GetEntityType(leftType);
-            //}
+
+            // Also walk base types in case the JoinResult<> is not the direct generic definition (subclassing).
+            var baseType = entityType;
+            while (baseType != null && baseType != typeof(object))
+            {
+                if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(JoinResult<,>))
+                {
+                    var leftType = baseType.GetGenericArguments()[0];
+                    return GetEntityType(leftType);
+                }
+                baseType = baseType.BaseType;
+            }
+
             return entityType;
         }
 
@@ -113,12 +211,24 @@ namespace DLinq
             }
         }
 
-        private (string colName, string colTableName) GetColumnInfo(MemberExpression member)
+        private (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberExpression member, TranslateContext context)
         {
             var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
             var colName = colAttr?.Name ?? member.Member.Name;
-            var colTableName = GetEntityTableName(member.Member.DeclaringType!);
-            return (colName, colTableName);
+            // Try to resolve the alias using the parameter expression if available
+            Expression expr = member.Expression;
+            while (expr is MemberExpression innerMember)
+                expr = innerMember.Expression;
+            if (expr is ParameterExpression param)
+            {
+                // Use the resolved entity type (unwrap JoinResult<,>, SqlQuery<>, IQueryable<>, etc.)
+                var colEntityType = GetEntityType(param.Type);
+                var colTableName = GetEntityTableName(colEntityType);
+                return (colName, colTableName, colEntityType);
+            }
+            var colTableNameFallback = GetEntityTableName(member.Member.ReflectedType!);
+            var colEntityTypeFallback = member.Member.ReflectedType!;
+            return (colName, colTableNameFallback, colEntityTypeFallback);
         }
 
         private static (string colName, string colTableName) GetMemberColumnInfo(MemberInfo member)
@@ -150,25 +260,87 @@ namespace DLinq
                 return $"({left}) {op} ({right})";
             }
 
+            // Parameterize right-side captured variables (e.g., p.Id > minId)
+            if (binary.Left is MemberExpression entityMember && binary.Right is MemberExpression rightMemberExpr && !ExpressionContainsParameter(rightMemberExpr))
+            {
+                // right is a captured variable or constant, left should be the entity property
+                if (TryGetValueFromExpression(rightMemberExpr, out var rightValue))
+                {
+                    var (colName, _, colEntityType) = GetColumnInfo(entityMember, context);
+
+                    string tableAlias = GetAliasForEntity(colEntityType, context);
+
+                    string sqlOp = binary.NodeType switch
+                    {
+                        ExpressionType.Equal => "=",
+                        ExpressionType.NotEqual => "!=",
+                        ExpressionType.GreaterThan => ">",
+                        ExpressionType.GreaterThanOrEqual => ">=",
+                        ExpressionType.LessThan => "<",
+                        ExpressionType.LessThanOrEqual => "<=",
+                        _ => throw new NotSupportedException()
+                    };
+
+                    parameters.Add(rightValue);
+                    return $"{_dialect.FormatColumn(colName, tableAlias)} {sqlOp} {_dialect.ParameterPlaceholder(parameters.Count - 1)}";
+                }
+            }
+            // Handle member-to-member comparisons (e.g. person.Id == pet.OwnerId) used for joins
+            if (binary.Left is MemberExpression leftMember && binary.Right is MemberExpression rightMember)
+            {
+                var (leftColName, leftColTableName, leftEntityType) = GetColumnInfo(leftMember, context);
+                var (rightColName, rightColTableName, rightEntityType) = GetColumnInfo(rightMember, context);
+
+                string leftAlias = GetAliasForEntity(leftEntityType, context);
+                string rightAlias = GetAliasForEntity(rightEntityType, context);
+                if (leftColTableName == leftAlias) leftAlias = null;
+                if (rightColTableName == rightAlias) rightAlias = null;
+                string sqlOp = binary.NodeType switch
+                {
+                    ExpressionType.Equal => "=",
+                    ExpressionType.NotEqual => "!=",
+                    ExpressionType.GreaterThan => ">",
+                    ExpressionType.GreaterThanOrEqual => ">=",
+                    ExpressionType.LessThan => "<",
+                    ExpressionType.LessThanOrEqual => "<=",
+                    _ => throw new NotSupportedException()
+                };
+
+                return $"{_dialect.FormatColumn(leftColName, leftAlias)} {sqlOp} {_dialect.FormatColumn(rightColName, rightAlias)}";
+            }
+            
+
             MemberExpression member = null;
             object constantValue = null;
+            bool constantAvailable = false;
 
-            if (binary.Left is MemberExpression leftMember)
+            if (binary.Left is MemberExpression lhsMember)
             {
-                member = leftMember;
-                constantValue = GetValueFromExpression(binary.Right);
+                member = lhsMember;
+                constantAvailable = TryGetValueFromExpression(binary.Right, out constantValue);
             }
-            else if (binary.Right is MemberExpression rightMember)
+            else if (binary.Right is MemberExpression rhsMember)
             {
-                member = rightMember;
-                constantValue = GetValueFromExpression(binary.Left);
+                member = rhsMember;
+                constantAvailable = TryGetValueFromExpression(binary.Left, out constantValue);
             }
 
-            if (member != null && constantValue != null)
+            if (member != null && constantAvailable)
             {
-                var (colName, colTableName) = GetColumnInfo(member);
-                string tableAlias = GetAliasForTable(colTableName, context);
-                if (tableAlias == colTableName) tableAlias = null;
+                var colName = member.Member.Name;
+                string tableAlias = GetAliasForMember(member, context);
+                string entityTable = GetEntityTableName(member.Expression.Type);
+                if (entityTable == tableAlias) tableAlias = null;
+                // Handle null constants as IS NULL / IS NOT NULL
+                if (constantValue == null)
+                {
+                    return binary.NodeType switch
+                    {
+                        ExpressionType.Equal => $"{_dialect.FormatColumn(colName, tableAlias)} IS NULL",
+                        ExpressionType.NotEqual => $"{_dialect.FormatColumn(colName, tableAlias)} IS NOT NULL",
+                        _ => throw new NotSupportedException("Unsupported null comparison.")
+                    };
+                }
                 string sqlOp = binary.NodeType switch
                 {
                     ExpressionType.Equal => "=",
@@ -199,8 +371,8 @@ namespace DLinq
             if (member != null)
             {
                 values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
-                var (colName, colTableName) = GetColumnInfo(member);
-                string tableAlias = GetAliasForTable(colTableName, context);
+                var (colName, _, colEntityType) = GetColumnInfo(member, context);
+                string tableAlias = GetAliasForEntity(colEntityType, context);
                 var paramNames = AddParameters(values, parameters);
                 return $"{_dialect.FormatColumn(colName, tableAlias)} IN ({string.Join(", ", paramNames)})";
             }
@@ -222,9 +394,9 @@ namespace DLinq
                 if (member != null)
                 {
                     values = GetValueFromExpression(valuesExpr) as IEnumerable<object>;
-                    var (colName, colTableName) = GetColumnInfo(member);
+                    var (colName, _, colEntityType) = GetColumnInfo(member, context);
                     var paramNames = AddParameters(values, parameters);
-                    string tableAlias = GetAliasForTable(colTableName, context);
+                    string tableAlias = GetAliasForEntity(colEntityType, context);
                     return $"{_dialect.FormatColumn(colName, tableAlias)} NOT IN ({string.Join(", ", paramNames)})";
                 }
             }
@@ -234,7 +406,8 @@ namespace DLinq
         public class TranslateContext
         {
             public AliasGenerator AliasGen { get; } = new AliasGenerator();
-            public Dictionary<string, string> TableAliasMap { get; } = new Dictionary<string, string>();
+            public Dictionary<string, string> TableAliasMap { get; } = new();
+            public Dictionary<ParameterExpression, string> ParameterAliasMap { get; } = new(); // NEW
         }
 
         /// <summary>
@@ -259,6 +432,7 @@ namespace DLinq
             var primaryKeys = new List<string>();
             Expression current = expression;
             List<SqlJoin> joins = null;
+            LambdaExpression pendingSelector = null;
             while (current is MethodCallExpression mce)
             {
                 switch (mce.Method.Name)
@@ -287,12 +461,7 @@ namespace DLinq
                         current = mce.Arguments[0];
                         break;
                     case "Select":
-                        var selectorLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
-                        var projectedColumns = ParseProjectionColumns(selectorLambda.Body, _dialect, context);
-                        if (projectedColumns != null && projectedColumns.Count > 0)
-                        {
-                            columns = projectedColumns;
-                        }
+                        pendingSelector = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
                         current = mce.Arguments[0];
                         break;
                     default:
@@ -310,7 +479,15 @@ namespace DLinq
                 throw new InvalidOperationException("Unable to determine entity type for SQL translation. Ensure your query targets a valid entity type.");
             }
             var tableName = GetEntityTableName(entityType);
-            var tableAlias = GetAliasForTable(tableName, context, false);
+            var tableAlias = GetAliasForEntity(entityType, context);
+            if (pendingSelector != null)
+            {
+                var projectedColumns = ParseProjectionColumns(pendingSelector.Body, _dialect, context);
+                if (projectedColumns != null && projectedColumns.Count > 0)
+                {
+                    columns = projectedColumns;
+                }
+            }
             if (columns == null)
             {
                 var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
@@ -370,18 +547,93 @@ namespace DLinq
         private void HandleJoin(MethodCallExpression mce, List<SqlJoin> joins, TranslateContext context)
         {
             // mce.Arguments: outer, inner, onPredicate, resultSelector
-            var rightQueryExpr = mce.Arguments[1];
-            var onPredicate = (LambdaExpression)((UnaryExpression)mce.Arguments[2]).Operand;
-            // Use the predicate parser to generate the ON clause
-            // We assume the left and right types are the first two generic arguments of the lambda
-            var leftType = onPredicate.Parameters[0].Type;
-            var rightType = onPredicate.Parameters[1].Type;
+
+            // Robustly unwrap a quoted/converted lambda: support Quote(...), Convert(...), and direct lambda forms
+            Expression onExpr = mce.Arguments.Count > 2 ? mce.Arguments[2] : null!;
+            while (onExpr is UnaryExpression unary &&
+                   (unary.NodeType == ExpressionType.Quote || unary.NodeType == ExpressionType.Convert))
+            {
+                onExpr = unary.Operand;
+            }
+            var onPredicate = onExpr as LambdaExpression;
+
+            Type leftType = null!;
+            Type rightType = null!;
+            ParameterExpression leftParam = null!;
+            ParameterExpression rightParam = null!;
+
+            if (onPredicate != null && onPredicate.Parameters.Count >= 2)
+            {
+                leftParam = onPredicate.Parameters[0];
+                rightParam = onPredicate.Parameters[1];
+                leftType = GetEntityType(leftParam.Type);
+                rightType = GetEntityType(rightParam.Type);
+            }
+            else
+            {
+                // 1) Try generic arguments of the method call (if available)
+                if (mce.Method.IsGenericMethod)
+                {
+                    var genArgs = mce.Method.GetGenericArguments();
+                    if (genArgs.Length >= 2)
+                    {
+                        leftType = GetEntityType(genArgs[0]);
+                        rightType = GetEntityType(genArgs[1]);
+                    }
+                }
+
+                // 2) Helper to try to obtain entity type from an expression argument
+                Type TryFromExpressionArg(Expression arg)
+                {
+                    if (arg == null) return null!;
+                    // If argument is a ConstantExpression holding a runtime SqlQuery<T> instance
+                    if (arg is ConstantExpression ce && ce.Value != null)
+                    {
+                        var vt = ce.Value.GetType();
+                        if (vt.IsGenericType)
+                        {
+                            var ga = vt.GetGenericArguments();
+                            if (ga.Length > 0) return GetEntityType(ga[0]);
+                        }
+                    }
+                    // Use the expression.Type generic argument if present (e.g., SqlQuery<T>, IQueryable<T>)
+                    var exprType = arg.Type;
+                    if (exprType.IsGenericType)
+                    {
+                        var ga2 = exprType.GetGenericArguments();
+                        if (ga2.Length > 0) return GetEntityType(ga2[0]);
+                    }
+                    return null!;
+                }
+
+                if (leftType == null) leftType = TryFromExpressionArg(mce.Arguments[0]);
+                if (rightType == null) rightType = TryFromExpressionArg(mce.Arguments[1]);
+            }
+
+            if (leftType == null || rightType == null)
+                throw new InvalidOperationException("Unable to determine join left/right entity types for translation.");
+
             var leftTable = GetEntityTableName(leftType);
             var rightTable = GetEntityTableName(rightType);
-            var leftAlias = GetAliasForTable(leftTable, context);
-            var rightAlias = GetAliasForTable(rightTable, context);
-            // Use the context and both types for parsing
-            var onSql = ParsePredicate(onPredicate.Body, new List<object>(), leftType, context);
+
+            // Ensure aliases are registered so ParsePredicate and projection logic resolve the same aliases
+            var leftAlias = GetAliasForEntity(leftType, context);
+            var rightAlias = GetAliasForEntity(rightType, context);
+
+            // Map parameter expressions to aliases (NEW)
+            //if (leftParam != null) context.ParameterAliasMap[leftParam] = leftAlias;
+            //if (rightParam != null) context.ParameterAliasMap[rightParam] = rightAlias;
+
+            // Parse the ON clause using the context so aliases resolve correctly.
+            string onSql = null;
+            if (onPredicate != null)
+            {
+                onSql = ParsePredicate(onPredicate.Body, new List<object>(), leftType, context);
+            }
+
+            if (string.IsNullOrWhiteSpace(onSql))
+                throw new NullReferenceException("Join Criteria 'ON' clause cannot be null or empty.");
+
             joins.Add(new SqlJoin
             {
                 JoinType = "INNER",
@@ -581,7 +833,7 @@ namespace DLinq
             var parameters = new List<object>();
             string whereSql = null;
 
-            context.TableAliasMap[tableName] = tableName;
+            context.TableAliasMap[entityType.FullName!] = tableName;
 
             if (wherePredicate != null)
             {
@@ -736,57 +988,117 @@ namespace DLinq
         private static List<Column>? ParseProjectionColumns(Expression body, ISqlDialect dialect, TranslateContext context)
         {
             if (body is null) return null;
-            var columns = new List<Column>();
             if (body is MemberInitExpression memberInit)
+                return ParseMemberInitProjection(memberInit, context);
+            if (body is NewExpression newExpr)
+                return ParseNewExpressionProjection(newExpr, context);
+            return ParseFallbackProjection(body, context);
+        }
+
+        private static List<Column> ParseMemberInitProjection(MemberInitExpression memberInit, TranslateContext context)
+        {
+            var columns = new List<Column>();
+            foreach (var binding in memberInit.Bindings)
             {
-                foreach (var binding in memberInit.Bindings)
+                if (binding is MemberAssignment assignment)
                 {
-                    if (binding is MemberAssignment assignment)
+                    if (assignment.Expression is MemberExpression memberExpr)
                     {
-                        // Handle Pair<TLeft, TRight> property access
-                        if (assignment.Expression is MemberExpression memberExpr)
+                        if (IsJoinSideMember(memberExpr))
                         {
-                            // Check for x.Left.Prop or x.Right.Prop
-                            if (memberExpr.Expression is MemberExpression pairExpr &&
-                                (pairExpr.Member.Name == "Left" || pairExpr.Member.Name == "Right"))
-                            {
-                                var side = pairExpr.Member.Name; // "Left" or "Right"
-                                var tableType = pairExpr.Type;
-                                var tableName = GetAliasForTable(GetEntityTableName(tableType),context);
-                                    //GetAliasForTable(dialect.FormatTableRaw(tableType.Name),context);
-                                var columnName = memberExpr.Member.Name;
-                                var alias = assignment.Member.Name;
-                                columns.Add(new Column(null, tableName, columnName, alias));
-                            }
-                            else
-                            {
-                                // Fallback: direct member access
-                                var tableName = memberExpr.Expression?.Type.Name ?? "";
-                                var columnName = memberExpr.Member.Name;
-                                var alias = assignment.Member.Name;
-                                columns.Add(new Column(null, tableName, columnName, alias));
-                            }
+                            columns.Add(ParseJoinMemberExpression(memberExpr, assignment.Member.Name, context));
+                            continue;
                         }
-                        // Optionally: handle nested MemberInit for more complex projections
+                        columns.Add(ParseDirectMemberColumn(memberExpr, assignment.Member.Name, context));
+                    }
+                    else if (TryGetValueFromExpression(assignment.Expression, out var constValue))
+                    {
+                        columns.Add(ParseLiteralColumn(constValue, assignment.Member.Name));
                     }
                 }
             }
-            else
-            {
-                //var props = body.Type.GetProperties();
-                //var fields = body.Type.GetFields();
-                foreach (var binding in body.Type.GetProperties())
-                {
-                    if (binding is not PropertyInfo) continue;
-                    var (columnName, tableName) = GetMemberColumnInfo(binding);
-                    var alias = GetAliasForTable(tableName, context);
-                    columns.Add(new Column(null, alias, columnName, columnName));
-                    // Optionally: handle nested MemberInit for more complex projections
-                }
-            }
-                return columns;
+            return columns;
         }
 
+        private static List<Column> ParseNewExpressionProjection(NewExpression newExpr, TranslateContext context)
+        {
+            var columns = new List<Column>();
+            for (int i = 0; i < newExpr.Arguments.Count; i++)
+            {
+                var arg = newExpr.Arguments[i];
+                var alias = newExpr.Members?[i].Name ?? $"c{i}";
+                if (arg is MemberExpression memberExpr)
+                {
+                    if (IsJoinSideMember(memberExpr))
+                    {
+                        columns.Add(ParseJoinMemberExpression(memberExpr, alias, context));
+                        continue;
+                    }
+                    columns.Add(ParseDirectMemberColumn(memberExpr, alias, context));
+                }
+                else if (TryGetValueFromExpression(arg, out var constValue))
+                {
+                    columns.Add(ParseLiteralColumn(constValue, alias));
+                }
+            }
+            return columns;
+        }
+
+        private static List<Column> ParseFallbackProjection(Expression body, TranslateContext context)
+        {
+            var columns = new List<Column>();
+            foreach (var prop in body.Type.GetProperties())
+            {
+                var tableAlias = GetAliasForEntity(prop.DeclaringType!, context);
+                columns.Add(new Column(null, tableAlias, prop.Name, prop.Name));
+            }
+            return columns;
+        }
+
+        private static bool IsJoinSideMember(MemberExpression memberExpr)
+        {
+            return memberExpr.Expression is MemberExpression pairExpr &&
+                   (pairExpr.Member.Name == "Left" || pairExpr.Member.Name == "Right");
+        }
+
+        private static Column ParseJoinMemberExpression(MemberExpression memberExpr, string alias, TranslateContext context)
+        {
+            var pairExpr = (MemberExpression)memberExpr.Expression!;
+            var side = pairExpr.Member.Name;
+            Type entityType = pairExpr.Type;
+            if (entityType != null && entityType.IsGenericType && entityType.GetGenericTypeDefinition() == typeof(JoinResult<,>))
+            {
+                var gargs = entityType.GetGenericArguments();
+                entityType = side == "Right" ? gargs[1] : gargs[0];
+            }
+            var tableAlias = GetAliasForEntity(entityType, context);
+            var columnName = memberExpr.Member.Name;
+            return new Column(null, tableAlias, columnName, alias);
+        }
+
+        private static Column ParseDirectMemberColumn(MemberExpression memberExpr, string alias, TranslateContext context)
+        {
+            var colEntityType = memberExpr.Expression?.Type;
+            if (colEntityType != null && colEntityType.IsGenericType && colEntityType.GetGenericTypeDefinition() == typeof(JoinResult<,>))
+            {
+                colEntityType = colEntityType.GetGenericArguments()[0];
+            }
+            var colTableAlias = colEntityType != null ? GetAliasForEntity(colEntityType, context) : "";
+            var colName = memberExpr.Member.Name;
+            return new Column(null, colTableAlias, colName, alias);
+        }
+
+        private static Column ParseLiteralColumn(object? value, string alias)
+        {
+            string literal;
+            if (value == null) literal = "NULL";
+            else if (value is string s) literal = $"'{s.Replace("'", "''")}'";
+            else if (value is bool b) literal = b ? "1" : "0";
+            else if (value is DateTime dt) literal = $"'{dt:yyyy-MM-ddTHH:mm:ss.fffffff}'";
+            else if (value is Enum) literal = Convert.ToInt32(value).ToString();
+            else literal = Convert.ToString(value, CultureInfo.InvariantCulture);
+            return new Column(null, "", literal, alias, true);
+        }
         // Helper for Skip
         private static void HandleSkip(MethodCallExpression mce, ref int? skip, ref Expression current)
         {
@@ -829,7 +1141,7 @@ namespace DLinq
             var whereLambda = (LambdaExpression)((UnaryExpression)mce.Arguments[1]).Operand;
             entityType = GetEntityType(mce.Arguments[0].Type.GetGenericArguments()[0]);
             var tableName = GetEntityTableName(entityType);
-            var tableAlias = GetAliasForTable(tableName, context);
+            var tableAlias = GetAliasForEntity(entityType, context);
             var thisWhereSql = ParsePredicate(whereLambda.Body, parameters, entityType, context);
             whereSql = whereSql == null ? thisWhereSql : $"({thisWhereSql}) AND ({whereSql})";
             current = mce.Arguments[0];

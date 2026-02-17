@@ -35,17 +35,8 @@ namespace DLinqTests
             public string PetName { get; set; }
         }
 
-        private class TestDialect : ISqlDialect
+        private class TestDialect : DummyDialect
         {
-            public string FormatTable(string tableName) => tableName;
-            public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
-            public string FormatColumn(string columnName, string? tableName = null) => columnName;
-            public string ParameterPlaceholder(int index) => "@p" + index;
-            public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options) => "INSERT";
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys) => "UPDATE";
-            public string DeleteStatement(string tableName, object whereValues) => "DELETE";
-            public string IdentityValueExpression(string tableName, string columnName) => "<identity>";
         }
 
         [TestMethod]
@@ -164,32 +155,94 @@ namespace DLinqTests
             Assert.AreEqual(1, paramDict["@p0"]);
         }
 
+        [TestMethod]
+        public void Join_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
+                +" INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
+                ,sql);
+        }
+
+        [TestMethod]
+        public void Join_WithMultipleConditions_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Where(person => person.Age > 18)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
+                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
+                +" INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL) "
+                +"WHERE [t1].[Age] > @p0"
+                ,sql);
+            Assert.IsTrue(sql.Contains("ON"));
+            Assert.IsTrue(sql.Contains("AND"));
+        }
+
+        [TestMethod]
+        public void Join_WithMultipleConditions_ToPersonProjection_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
+                .Where(j => j.Left.Age > 18)
+                .Select(j => new Person{ Name = j.Right.Name, Age = 4 });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t2].[Name] AS [Name], 4 AS [Age] FROM [Person] AS [t1]"
+                +" INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL) "
+                +"WHERE [t1].[Age] > @p0"
+                ,sql);
+        }
+
+        [TestMethod]
+        public void Join_WithMultipleConditions_ToPerson_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
+                .Select(j => new Person { Name = j.Right.Name, Age = 4 });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("JOIN"));
+            Assert.IsTrue(sql.Contains("ON"));
+            Assert.IsTrue(sql.Contains("AND"));
+        }
+
+        [TestMethod]
+        public void Join_ChainedWithWhereAndSelect_GeneratesSql()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Where(j => j.Left.Age > 18)
+                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
+                +" INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
+                +"WHERE [t1].[Age] > @p0"
+                ,sql);
+        }
+
         [Table("DummyTable")]
         private class TestEntity
         {
             [Key]
             public int Id { get; set; }
             public string Name { get; set; }
-        }
-
-       
-        [TestMethod]
-        public void Join_WithWhere_GeneratesSql()
-        {
-            var provider = GetProvider();
-            var people = new SqlQuery<Person>(provider);
-            var pets = new SqlQuery<Pet>(provider);
-            var joined = people.Join(
-                pets,
-                person => person.Id,
-                pet => pet.OwnerId,
-                (person, pet) => new PersonPet { PersonName = person.Name, PetName = pet.Name }
-            ).Where(x => x.PersonName == "Alice");
-            var (sql, parameters) = joined.ToSql();
-            Assert.IsTrue(sql.Contains("WHERE"));
-            Assert.IsTrue(sql.Contains("PersonName"));
-            var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual("Alice", paramDict["p0"]);
         }
 
         private class Department

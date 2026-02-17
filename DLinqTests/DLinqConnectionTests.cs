@@ -289,17 +289,9 @@ namespace DLinqTests
         }
 
         // This will trigger the NotSupportedException in the constructor
-        private class UnsupportedDialect : ISqlDialect
+        private class UnsupportedDialect : DummyDialect
         {
-            public string FormatTable(string tableName) => tableName;
-            public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
-            public string FormatColumn(string columnName, string? tableName = null) => columnName;
-            public string ParameterPlaceholder(int index) => "@p" + index;
-            public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options) => "INSERT";
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys) => "UPDATE";
-            public string DeleteStatement(string tableName, object whereValues) => "DELETE";
-            public string IdentityValueExpression(string tableName, string columnName) => "<identity>";
+            
         }
     }
 }

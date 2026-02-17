@@ -142,15 +142,30 @@ namespace DLinq
             return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
         }
         public SqlQuery<JoinResult<T, TRight>> Join<TRight>(
-            SqlQuery<TRight> right,
             Expression<Func<T, TRight, bool>> onPredicate)
         {
-            if (right == null) throw new ArgumentNullException(nameof(right));
             if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
 
+            // Internally create the right query using the same provider
+            var right = new SqlQuery<TRight>((QueryProvider)this.Provider);
+
             var joinResultType = typeof(JoinResult<,>).MakeGenericType(typeof(T), typeof(TRight));
-            var leftParam = Expression.Parameter(typeof(T), "l");
-            var rightParam = Expression.Parameter(typeof(TRight), "r");
+
+            // Prefer reusing the onPredicate parameters (if available) so parameter identity is preserved in the expression tree.
+            ParameterExpression leftParam;
+            ParameterExpression rightParam;
+            if (onPredicate != null && onPredicate.Parameters.Count >= 2)
+            {
+                // Use the same ParameterExpression instances from the onPredicate
+                leftParam = onPredicate.Parameters[0];
+                rightParam = onPredicate.Parameters[1];
+            }
+            else
+            {
+                leftParam = Expression.Parameter(typeof(T), "l");
+                rightParam = Expression.Parameter(typeof(TRight), "r");
+            }
+
             var ctor = joinResultType.GetConstructor(new[] { typeof(T), typeof(TRight) });
             var members = new MemberInfo[] {
                 joinResultType.GetProperty("Left"),
@@ -160,8 +175,8 @@ namespace DLinq
             var resultSelector = Expression.Lambda(newExpr, leftParam, rightParam);
             // Compose a custom Join expression node for the translator
             var call = Expression.Call(
-                typeof(Queryable),
-                "Join", // still use Join for recognizability
+                typeof(SqlQuery<T>),    // <--- use SqlQuery instead of Queryable
+                "Join",
                 new[] { typeof(T), typeof(TRight), joinResultType },
                 this.Expression,
                 right.Expression,
@@ -170,5 +185,17 @@ namespace DLinq
             );
             return (SqlQuery<JoinResult<T, TRight>>)Provider.CreateQuery(call);
         }
+
+        internal static IQueryable<TResult> Join<TLeft, TRight, TResult>(
+            IQueryable<TLeft> left,
+            IQueryable<TRight> right,
+            Expression<Func<TLeft, TRight, bool>> onPredicate,
+            Expression<Func<TLeft, TRight, TResult>> resultSelector)
+        {
+            // This method is only a marker for expression-tree construction and translation.
+            throw new NotSupportedException("This method is only intended for use in expression trees.");
+        }
+
+
     }
 }

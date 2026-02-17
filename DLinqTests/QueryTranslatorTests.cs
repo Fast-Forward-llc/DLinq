@@ -49,30 +49,5 @@ namespace DLinqTests
             var result = translator.GenerateDeleteSql(typeof(object), null, options);
             Assert.IsTrue(result.sql.Contains("CustomTable"));
         }
-
-        private class DummyDialect : ISqlDialect
-        {
-            public string FormatTable(string tableName) => tableName;
-            public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
-            public string FormatColumn(string columnName, string? tableName = null) => columnName;
-            public string ParameterPlaceholder(int index) => "@p" + index;
-            public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
-            public string InsertStatement(string tableName, List<string> columns, List<string> paramNames, DLinq.InsertOptions options)
-            {
-                return $"INSERT INTO {tableName}";
-            }
-            public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, List<(string colName, object value)> primaryKeys)
-            {
-                return $"UPDATE {options?.TableName ?? tableName}";
-            }
-            public string DeleteStatement(string tableName, object whereValues)
-            {
-                return $"DELETE FROM {tableName}";
-            }
-            public string IdentityValueExpression(string tableName, string columnName)
-            {
-                return $"<identity>";
-            }
-        }
     }
 }
