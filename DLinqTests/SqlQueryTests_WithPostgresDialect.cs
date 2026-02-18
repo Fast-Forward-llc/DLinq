@@ -279,19 +279,20 @@ namespace DLinqTests
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person3>(provider)
-                .Where(p => p.Age > 18)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
                 .Join<Person3, Pet, CreatedByUser>((person, createdByUser) => person.CreatedByUserId == createdByUser.Id)
                 .Join<Person3, Pet, CreatedByUser, ModifiedByUser>((person, modifiedByUser) => person.ModifiedByUserId == modifiedByUser.Id)
+                .Where<Person3, Pet, CreatedByUser, ModifiedByUser>((person, pet, createdByUser, modifiedByUser) => person.Age > 18)
                 .Select<Person3, Pet, CreatedByUser, ModifiedByUser, object>((person, pet, createdByUser, modifiedByUser) => new { PersonName = person.Name, PetName = pet.Name, CreatedByUser = createdByUser.Name, ModifiedByUser = modifiedByUser.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
-                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t4\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
-                + "INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
-                + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
-                + "INNER JOIN \"Users\" AS \"t4\" ON \"t1\".\"ModifiedByUserId\" = \"t4\".\"Id\" "
-                + "WHERE \"t1\".\"Age\" > @p0"
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t4\".\"Name\" AS \"PetName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t2\".\"Name\" AS \"ModifiedByUser\" "
+                +"FROM \"person\" AS \"t1\" "
+                +"INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"ModifiedByUserId\" = \"t2\".\"Id\" "
+                +"INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
+                +"INNER JOIN \"Pet\" AS \"t4\" ON \"t1\".\"Id\" = \"t4\".\"OwnerId\" "
+                +"WHERE \"t1\".\"Age\" > @p0"
                 , sql);
             Assert.IsTrue(sql.Contains("WHERE"));
             Assert.IsTrue(sql.Contains("Age"));

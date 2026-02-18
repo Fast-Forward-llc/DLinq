@@ -22,47 +22,61 @@ namespace DLinq
         public string FormatTable(string tableName, string? alias = null)
         {
             if (string.IsNullOrWhiteSpace(tableName)) return tableName;
-            if (tableName.StartsWith("\"")) tableName = tableName.Substring(1);
-            if (tableName.EndsWith("\"")) tableName = tableName.Substring(0, tableName.Length - 1);
-            var formatted = string.Join(".", tableName.Split('.').Select(part => FormatIdentifier($"\"{part.Replace("\"", "\"\"")}\"")));
+            if (tableName.StartsWith("\"") && tableName.EndsWith("\"")) tableName = tableName.Substring(0, tableName.Length - 1).Substring(1);
+            var formatted = string.Join(".", tableName.Split('.').Select(part => FormatIdentifier(part)));
             if (!string.IsNullOrEmpty(alias))
                 return $"{formatted} AS \"{alias}\"";
             return formatted;
         }
 
-        public string FormatTableRaw(string tableName, string? alias = null)
-        {
-            if (string.IsNullOrWhiteSpace(tableName)) return tableName;
-            if (tableName.StartsWith("\"")) tableName = tableName.Substring(1);
-            if (tableName.EndsWith("\"")) tableName = tableName.Substring(0, tableName.Length - 1);
-            var formatted = string.Join(".", tableName.Split('.').Select(part => FormatIdentifier($"{part.Replace("\"", "\"\"")}")));
-            if (!string.IsNullOrEmpty(alias))
-                return alias;
-            return formatted;
-        }
-
         public string FormatIdentifier(string identifier)
         {
+            return FormatIdentifierQuoted(identifier, _options);
+        }
+
+        public static string FormatIdentifierQuoted(string identifier, DialectOptions options)
+        {
+            return $"\"{FormatIdentifierUnquoted(identifier, options)}\"";
+        }
+
+        public static string FormatIdentifierUnquoted(string identifier, DialectOptions options)
+        {
             if (string.IsNullOrWhiteSpace(identifier)) return string.Empty;
-            switch (_options)
+            switch (options)
             {
-                case DialectOptions.ForceLowerCase: return identifier.ToLower();
+                case DialectOptions.ForceLowerCase: identifier = identifier.ToLower(); break;
                 case DialectOptions.ForceLowerSnakeCase:
                     {
-                        return ToLowerSnakeCase(identifier);
+                        identifier = ToLowerSnakeCase(identifier);
                     }
-                default: return identifier;
+                    break;
             }
+            identifier = identifier.Replace("\"", "\"\"");
+            return identifier;
+        }
+
+        public static string FormatParameter(string paramName)
+        {
+            return $"@{paramName}";
+        }
+
+        public static string FormatValue(object? value)
+        {
+            if (value is null) return "NULL";
+            if (value is string s) return $"'{s.Replace("'", "''")}'";
+            if (value is DateTime dt) return $"'{dt:yyyy-MM-dd HH:mm:ss.fff}'";
+            if (value is bool b) return b ? "TRUE" : "FALSE";
+            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL";
         }
 
         public string FormatColumn(string columnName, string? tableAlias = null, bool isLiteralValue = false)
         {
             if (string.IsNullOrWhiteSpace(columnName)) return columnName;
             if (isLiteralValue) return columnName;
-            string escapedColumnName = FormatIdentifier(columnName.Replace("\"", "\"\""));
+            string escapedColumnName = FormatIdentifier(columnName);
             if (!string.IsNullOrWhiteSpace(tableAlias))
-                return $"{FormatTable(tableAlias)}.\"{escapedColumnName}\"";
-            return $"\"{escapedColumnName}\"";
+                return $"{FormatTable(tableAlias)}.{escapedColumnName}";
+            return escapedColumnName;
         }
 
         private string QuotedIdentifier(string identifier)
@@ -217,5 +231,37 @@ namespace DLinq
             // Trim leading/trailing underscores
             return result.Trim('_');
         }
+
+        private IFormatProvider? sqlFormatProvider;
+
+        public IFormatProvider SqlFormatter
+        {
+            get
+            {
+                if (sqlFormatProvider == null)
+                    sqlFormatProvider = new SqlFormatProvider(_options);
+                return sqlFormatProvider;
+            }
+        }
+
+        public sealed class SqlFormatProvider(DialectOptions Options) : IFormatProvider, ICustomFormatter
+        {
+
+            public object? GetFormat(Type? formatType)
+                => formatType == typeof(ICustomFormatter) ? this : null;
+
+            public string Format(string? format, object? arg, IFormatProvider? provider)
+            {
+                if (string.Equals(format, "I", StringComparison.OrdinalIgnoreCase))
+                    return arg == null ? "" : PostgresDialect.FormatIdentifierQuoted(arg.ToString(), Options);
+                if (string.Equals(format, "P", StringComparison.OrdinalIgnoreCase))
+                    return arg == null ? "" : PostgresDialect.FormatParameter(arg.ToString());
+                // Fallback
+                return arg is IFormattable f
+                    ? f.ToString(format, provider)
+                    : arg?.ToString() ?? string.Empty;
+            }
+        }
+
     }
 }

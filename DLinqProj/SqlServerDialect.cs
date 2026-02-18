@@ -1,7 +1,8 @@
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Linq;
 using System.Text;
-using System.Dynamic;
+using static DLinq.PostgresDialect;
 
 namespace DLinq
 {
@@ -39,27 +40,36 @@ namespace DLinq
                 return $"{escapedTableName}.{escapedColumnName}";
             return $"{escapedColumnName}";
         }
+        public string FormatIdentifier(string identifier)
+        {
+            return FormatIdentifierQuoted(identifier);
+        }
+        public static string FormatIdentifierQuoted(string identifier)
+        {
+            return $"[{EscapeInnerSquareBrackets(identifier)}]";
+        }
+
+        public static string FormatParameter(string paramName)
+        {
+            return $"@{paramName}";
+        }
+
+        public string FormatValue(object? value)
+        {
+            if (value is null) return "NULL";
+            else if (value is string s) return $"'{s.Replace("'", "''")}'";
+            else if (value is DateTime dt) return $"'{dt:yyyy-MM-dd HH:mm:ss.fff}'";
+            else if (value is bool b) return b ? "1" : "0";
+            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL";
+        }
+
         private static string EscapeInnerSquareBrackets(string input)
         {
-            if (string.IsNullOrEmpty(input) || input.Length < 3)
-                return input;
-            if (input.LastIndexOf("[")==0 && input.LastIndexOf("]")== input.Length-1) return input;
-            var sb = new StringBuilder(input.Length+3);
-            sb.Append(input[0]);
-            for (int i = 1; i < input.Length - 1; i++)
-            {
-                if (input[i] == '[' || input[i] == ']')
-                {
-                    sb.Append(input[i]);
-                    sb.Append(input[i]);
-                }
-                else
-                {
-                    sb.Append(input[i]);
-                }
-            }
-            sb.Append(input[^1]);
-            return sb.ToString();
+            if (string.IsNullOrEmpty(input)) return input;
+            if (input == "[]") return input;
+            if (input.StartsWith("[") && input.EndsWith("]")) input = input.Substring(0, input.Length - 1).Substring(1);
+            input = input.Replace("]", "]]");
+            return $"{input}";
         }
 
         public string ParameterPlaceholder(int index) => $"@p{index}";
@@ -153,6 +163,38 @@ namespace DLinq
         public string IdentityValueExpression(string tableName, string columnName)
         {
             return "SCOPE_IDENTITY()";
+        }
+
+        private IFormatProvider? sqlFormatProvider;
+
+        public IFormatProvider SqlFormatter
+        {
+            get
+            {
+                if (sqlFormatProvider == null)
+                    sqlFormatProvider = new SqlFormatProvider();
+                return sqlFormatProvider;
+            }
+        }
+
+        public sealed class SqlFormatProvider() : IFormatProvider, ICustomFormatter
+        {
+
+            public object? GetFormat(Type? formatType)
+                => formatType == typeof(ICustomFormatter) ? this : null;
+
+            public string Format(string? format, object? arg, IFormatProvider? provider)
+            {
+                if (string.Equals(format, "I", StringComparison.OrdinalIgnoreCase))
+                    return arg == null ? "" : SqlServerDialect.FormatIdentifierQuoted(arg.ToString());
+                if (string.Equals(format, "P", StringComparison.OrdinalIgnoreCase))
+                    return arg == null ? "" : SqlServerDialect.FormatParameter(arg.ToString());
+
+                // Fallback
+                return arg is IFormattable f
+                    ? f.ToString(format, provider)
+                    : arg?.ToString() ?? string.Empty;
+            }
         }
     }
 }

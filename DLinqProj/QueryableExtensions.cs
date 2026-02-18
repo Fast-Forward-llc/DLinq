@@ -54,22 +54,42 @@ namespace DLinq
         public static SqlQuery<JoinResult<JoinResult<T, T2>, T3>> Join<T, T2, T3>(this SqlQuery<JoinResult<T, T2>> query, Expression<Func<T, T2, T3, bool>> onPredicate)
         {
             if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
-            Expression<Func<JoinResult<T, T2>, T3, bool>> wrapped = (prevJoin, t3) =>
-                onPredicate.Compile()(prevJoin.Left, prevJoin.Right, t3);
+
+            var prevJoinParam = Expression.Parameter(typeof(JoinResult<T, T2>), "prevJoin");
+            var t3Param = Expression.Parameter(typeof(T3), "t3");
+
+            var map = new Dictionary<ParameterExpression, Expression>
+            {
+                [onPredicate.Parameters[0]] = Expression.Property(prevJoinParam, "Left"),
+                [onPredicate.Parameters[1]] = Expression.Property(prevJoinParam, "Right"),
+                [onPredicate.Parameters[2]] = t3Param
+            };
+
+            var replacedBody = new ParameterReplacer(map).Visit(onPredicate.Body);
+            var wrapped = Expression.Lambda<Func<JoinResult<T, T2>, T3, bool>>(replacedBody, prevJoinParam, t3Param);
+
             return query.Join<T3>(wrapped);
         }
 
-        // Surrogate entity join overload for three joins
+        // Surrogate entity join overload for three joins (4-arg onPredicate)
         public static SqlQuery<JoinResult<JoinResult<JoinResult<T, T2>, T3>, T4>> Join<T, T2, T3, T4>(this SqlQuery<JoinResult<JoinResult<T, T2>, T3>> query, Expression<Func<T, T2, T3, T4, bool>> onPredicate)
         {
             if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
-            Expression<Func<JoinResult<JoinResult<T, T2>, T3>, T4, bool>> wrapped = (prevJoin, t4) =>
-                onPredicate.Compile()(
-                    prevJoin.Left.Left, // T
-                    prevJoin.Left.Right, // T2
-                    prevJoin.Right, // T3
-                    t4 // T4
-                );
+
+            var prevJoinParam = Expression.Parameter(typeof(JoinResult<JoinResult<T, T2>, T3>), "prevJoin");
+            var t4Param = Expression.Parameter(typeof(T4), "t4");
+
+            var map = new Dictionary<ParameterExpression, Expression>
+            {
+                [onPredicate.Parameters[0]] = Expression.Property(Expression.Property(prevJoinParam, "Left"), "Left"),
+                [onPredicate.Parameters[1]] = Expression.Property(Expression.Property(prevJoinParam, "Left"), "Right"),
+                [onPredicate.Parameters[2]] = Expression.Property(prevJoinParam, "Right"),
+                [onPredicate.Parameters[3]] = t4Param
+            };
+
+            var replacedBody = new ParameterReplacer(map).Visit(onPredicate.Body);
+            var wrapped = Expression.Lambda<Func<JoinResult<JoinResult<T, T2>, T3>, T4, bool>>(replacedBody, prevJoinParam, t4Param);
+
             return query.Join<T4>(wrapped);
         }
 
@@ -77,8 +97,19 @@ namespace DLinq
         public static SqlQuery<TResult> Select<T, T2, T3, TResult>(this SqlQuery<JoinResult<JoinResult<T, T2>, T3>> query, Expression<Func<T, T2, T3, TResult>> selector)
         {
             if (selector == null) throw new ArgumentNullException(nameof(selector));
-            Expression<Func<JoinResult<JoinResult<T, T2>, T3>, TResult>> wrapped = join =>
-                selector.Compile()(join.Left.Left, join.Left.Right, join.Right);
+
+            var joinParam = Expression.Parameter(typeof(JoinResult<JoinResult<T, T2>, T3>), "join");
+
+            // map selector parameters -> join.Left.Left, join.Left.Right, join.Right
+            var map = new Dictionary<ParameterExpression, Expression>
+            {
+                [selector.Parameters[0]] = Expression.Property(Expression.Property(joinParam, "Left"), "Left"),
+                [selector.Parameters[1]] = Expression.Property(Expression.Property(joinParam, "Left"), "Right"),
+                [selector.Parameters[2]] = Expression.Property(joinParam, "Right")
+            };
+
+            var replacedBody = new ParameterReplacer(map).Visit(selector.Body);
+            var wrapped = Expression.Lambda<Func<JoinResult<JoinResult<T, T2>, T3>, TResult>>(replacedBody, joinParam);
             return query.Select(wrapped);
         }
 
@@ -86,13 +117,19 @@ namespace DLinq
         public static SqlQuery<TResult> Select<T, T2, T3, T4, TResult>(this SqlQuery<JoinResult<JoinResult<JoinResult<T, T2>, T3>, T4>> query, Expression<Func<T, T2, T3, T4, TResult>> selector)
         {
             if (selector == null) throw new ArgumentNullException(nameof(selector));
-            Expression<Func<JoinResult<JoinResult<JoinResult<T, T2>, T3>, T4>, TResult>> wrapped = join =>
-                selector.Compile()(
-                    join.Left.Left.Left, // T
-                    join.Left.Left.Right, // T2
-                    join.Left.Right, // T3
-                    join.Right // T4
-                );
+
+            var joinParam = Expression.Parameter(typeof(JoinResult<JoinResult<JoinResult<T, T2>, T3>, T4>), "join");
+
+            var map = new Dictionary<ParameterExpression, Expression>
+            {
+                [selector.Parameters[0]] = Expression.Property(Expression.Property(Expression.Property(joinParam, "Left"), "Left"), "Left"),
+                [selector.Parameters[1]] = Expression.Property(Expression.Property(Expression.Property(joinParam, "Left"), "Left"), "Right"),
+                [selector.Parameters[2]] = Expression.Property(Expression.Property(joinParam, "Left"), "Right"),
+                [selector.Parameters[3]] = Expression.Property(joinParam, "Right")
+            };
+
+            var replacedBody = new ParameterReplacer(map).Visit(selector.Body);
+            var wrapped = Expression.Lambda<Func<JoinResult<JoinResult<JoinResult<T, T2>, T3>, T4>, TResult>>(replacedBody, joinParam);
             return query.Select(wrapped);
         }
 
@@ -115,5 +152,49 @@ namespace DLinq
         }
 
         // You can add more overloads for deeper chains if needed.
+
+        // simple helper: replaces ParameterExpression keys with specified Expression values
+        private class ParameterReplacer : ExpressionVisitor
+        {
+            private readonly Dictionary<ParameterExpression, Expression> _map;
+            public ParameterReplacer(Dictionary<ParameterExpression, Expression> map) { _map = map ?? new Dictionary<ParameterExpression, Expression>(); }
+            protected override Expression VisitParameter(ParameterExpression node)
+            {
+                if (_map.TryGetValue(node, out var replacement)) return replacement;
+                return base.VisitParameter(node);
+            }
+        }
+
+        public static SqlQuery<JoinResult<T1, T2>> Where<T1, T2>(
+            this SqlQuery<JoinResult<T1, T2>> query,
+            Expression<Func<T1, T2, bool>> predicate)
+        {
+            Expression<Func<JoinResult<T1, T2>, bool>> wrapped = j =>
+                predicate.Compile()(j.Left, j.Right);
+            return query.Where(wrapped);
+        }
+
+        public static SqlQuery<JoinResult<JoinResult<T1, T2>, T3>> Where<T1, T2, T3>(
+            this SqlQuery<JoinResult<JoinResult<T1, T2>, T3>> query,
+            Expression<Func<T1, T2, T3, bool>> predicate)
+        {
+            Expression<Func<JoinResult<JoinResult<T1, T2>, T3>, bool>> wrapped = j =>
+                predicate.Compile()(j.Left.Left, j.Left.Right, j.Right);
+            return query.Where(wrapped);
+        }
+
+        public static SqlQuery<JoinResult<JoinResult<JoinResult<T1, T2>, T3>, T4>> Where<T1, T2, T3, T4>(
+            this SqlQuery<JoinResult<JoinResult<JoinResult<T1, T2>, T3>, T4>> query,
+            Expression<Func<T1, T2, T3, T4, bool>> predicate)
+        {
+            Expression<Func<JoinResult<JoinResult<JoinResult<T1, T2>, T3>, T4>, bool>> wrapped = j =>
+                predicate.Compile()(
+                    j.Left.Left.Left,
+                    j.Left.Left.Right,
+                    j.Left.Right,
+                    j.Right
+                );
+            return query.Where(wrapped);
+        }
     }
 }

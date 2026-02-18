@@ -140,7 +140,7 @@ namespace DLinq
             }
         }
 
-        private static string GetEntityTableName(Type entityType)
+        internal static string GetEntityTableName(Type entityType)
         {
             if (entityType == null) return string.Empty;
             if (entityType.Name == nameof(ConstantExpression)) return string.Empty;
@@ -149,7 +149,7 @@ namespace DLinq
             return tableName;
         }
 
-        private Type GetEntityType(Type entityType)
+        private static Type GetEntityType(Type entityType)
         {
             if (entityType == null) return null;
 
@@ -390,7 +390,7 @@ namespace DLinq
             }
         }
 
-        private (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberExpression member, TranslateContext context)
+        internal static (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberExpression member, TranslateContext context)
         {
             var colAttr = member.Member.GetCustomAttribute<ColumnAttribute>();
             var colName = colAttr?.Name ?? member.Member.Name;
@@ -408,14 +408,6 @@ namespace DLinq
             var colTableNameFallback = GetEntityTableName(member.Member.ReflectedType!);
             var colEntityTypeFallback = member.Member.ReflectedType!;
             return (colName, colTableNameFallback, colEntityTypeFallback);
-        }
-
-        private static (string colName, string colTableName) GetMemberColumnInfo(MemberInfo member)
-        {
-            var colAttr = member.GetCustomAttribute<ColumnAttribute>();
-            var colName = colAttr?.Name ?? member.Name;
-            var colTableName = GetEntityTableName(member.DeclaringType!);
-            return (colName, colTableName);
         }
 
         private List<string> AddParameters(IEnumerable<object> values, List<object> parameters)
@@ -487,7 +479,7 @@ namespace DLinq
 
                 return $"{_dialect.FormatColumn(leftColName, leftAlias)} {sqlOp} {_dialect.FormatColumn(rightColName, rightAlias)}";
             }
-            
+
 
             MemberExpression member = null;
             object constantValue = null;
@@ -1370,85 +1362,85 @@ namespace DLinq
         }
 
         // Try to resolve a LambdaExpression that may be wrapped/quoted inside other expression shapes.
-// This performs a best-effort search (does not compile arbitrary expressions) and tries:
-//  - direct LambdaExpression
-//  - Unary/Quote -> operand
-//  - ConstantExpression whose Value is a LambdaExpression or an Expression carrying one
-//  - MemberExpression evaluated via EvaluateMemberExpression
-//  - MethodCallExpression: try evaluating or search object/arguments
-private LambdaExpression? ResolveLambdaFromExpression(Expression? expr)
-{
-    if (expr == null) return null;
+        // This performs a best-effort search (does not compile arbitrary expressions) and tries:
+        //  - direct LambdaExpression
+        //  - Unary/Quote -> operand
+        //  - ConstantExpression whose Value is a LambdaExpression or an Expression carrying one
+        //  - MemberExpression evaluated via EvaluateMemberExpression
+        //  - MethodCallExpression: try evaluating or search object/arguments
+        private LambdaExpression? ResolveLambdaFromExpression(Expression? expr)
+        {
+            if (expr == null) return null;
 
-    switch (expr)
-    {
-        case LambdaExpression le:
-            return le;
-        case UnaryExpression ue:
-            // e.g. quoted lambda: Expression.Quote(...)
-            return ResolveLambdaFromExpression(ue.Operand);
-        case ConstantExpression ce:
-            if (ce.Value is LambdaExpression cle) return cle;
-            if (ce.Value is Expression ex && ex is LambdaExpression cle2) return cle2;
-            return null;
-        case MemberExpression mem:
-            // Try to evaluate the member (closure field/property) and see if it holds a Lambda/Expression/Delegate
-            try
+            switch (expr)
             {
-                var val = EvaluateMemberExpression(mem);
-                if (val is LambdaExpression ml) return ml;
-                if (val is Expression mex && mex is LambdaExpression ml2) return ml2;
-                if (val is Delegate d && d.Target != null)
-                {
-                    // Look for an Expression field or property on the delegate target as before;
-                    var target = d.Target;
-                    var exprField = target.GetType()
-                        .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                        .FirstOrDefault(f => typeof(Expression).IsAssignableFrom(f.FieldType));
-                    if (exprField != null)
+                case LambdaExpression le:
+                    return le;
+                case UnaryExpression ue:
+                    // e.g. quoted lambda: Expression.Quote(...)
+                    return ResolveLambdaFromExpression(ue.Operand);
+                case ConstantExpression ce:
+                    if (ce.Value is LambdaExpression cle) return cle;
+                    if (ce.Value is Expression ex && ex is LambdaExpression cle2) return cle2;
+                    return null;
+                case MemberExpression mem:
+                    // Try to evaluate the member (closure field/property) and see if it holds a Lambda/Expression/Delegate
+                    try
                     {
-                        var fval = exprField.GetValue(target) as Expression;
-                        if (fval is LambdaExpression flev) return flev;
+                        var val = EvaluateMemberExpression(mem);
+                        if (val is LambdaExpression ml) return ml;
+                        if (val is Expression mex && mex is LambdaExpression ml2) return ml2;
+                        if (val is Delegate d && d.Target != null)
+                        {
+                            // Look for an Expression field or property on the delegate target as before;
+                            var target = d.Target;
+                            var exprField = target.GetType()
+                                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                                .FirstOrDefault(f => typeof(Expression).IsAssignableFrom(f.FieldType));
+                            if (exprField != null)
+                            {
+                                var fval = exprField.GetValue(target) as Expression;
+                                if (fval is LambdaExpression flev) return flev;
+                            }
+                            var exprProp = target.GetType()
+                                .GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                                .FirstOrDefault(p => typeof(Expression).IsAssignableFrom(p.PropertyType));
+                            if (exprProp != null)
+                            {
+                                var pval = exprProp.GetValue(target) as Expression;
+                                if (pval is LambdaExpression plev) return plev;
+                            }
+                        }
                     }
-                    var exprProp = target.GetType()
-                        .GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                        .FirstOrDefault(p => typeof(Expression).IsAssignableFrom(p.PropertyType));
-                    if (exprProp != null)
+                    catch
                     {
-                        var pval = exprProp.GetValue(target) as Expression;
-                        if (pval is LambdaExpression plev) return plev;
+                        // ignore evaluation errors; fall through to try inner expression
                     }
-                }
-            }
-            catch
-            {
-                // ignore evaluation errors; fall through to try inner expression
-            }
-            // fall back to trying the member's target expression (e.g. nested member chains)
-            return ResolveLambdaFromExpression(mem.Expression);
-        case MethodCallExpression mcall:
-            // Try to evaluate call if it's safe (GetValueFromExpression will return null if the expression contains ParameterExpression)
-            try
-            {
-                var val = GetValueFromExpression(mcall);
-                if (val is LambdaExpression ml) return ml;
-                if (val is Expression mex && mex is LambdaExpression ml2) return ml2;
-            }
-            catch { /* ignore */ }
+                    // fall back to trying the member's target expression (e.g. nested member chains)
+                    return ResolveLambdaFromExpression(mem.Expression);
+                case MethodCallExpression mcall:
+                    // Try to evaluate call if it's safe (GetValueFromExpression will return null if the expression contains ParameterExpression)
+                    try
+                    {
+                        var val = GetValueFromExpression(mcall);
+                        if (val is LambdaExpression ml) return ml;
+                        if (val is Expression mex && mex is LambdaExpression ml2) return ml2;
+                    }
+                    catch { /* ignore */ }
 
-            // Otherwise search object and arguments for an embedded LambdaExpression
-            var candidate = ResolveLambdaFromExpression(mcall.Object);
-            if (candidate != null) return candidate;
-            foreach (var a in mcall.Arguments)
-            {
-                candidate = ResolveLambdaFromExpression(a);
-                if (candidate != null) return candidate;
-            }
-            return null;
+                    // Otherwise search object and arguments for an embedded LambdaExpression
+                    var candidate = ResolveLambdaFromExpression(mcall.Object);
+                    if (candidate != null) return candidate;
+                    foreach (var a in mcall.Arguments)
+                    {
+                        candidate = ResolveLambdaFromExpression(a);
+                        if (candidate != null) return candidate;
+                    }
+                    return null;
 
-        default:
-            return null;
-    }
-}
+                default:
+                    return null;
+            }
+        }
     }
 }
