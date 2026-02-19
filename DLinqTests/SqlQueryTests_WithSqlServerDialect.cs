@@ -161,7 +161,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
@@ -177,7 +177,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider)
                 .Where(person => person.Age > 18)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
-                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
@@ -195,8 +195,8 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
-                .Where(j => j.Left.Age > 18)
-                .Select(j => new Person{ Name = j.Right.Name, Age = 4 });
+                .Where(p => p.Age > 18)
+                .Select<Pet>((p) => new Person{ Name = p.Name, Age = 4 });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
@@ -212,7 +212,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
-                .Select(j => new Person { Name = j.Right.Name, Age = 4 });
+                .Select((p) => new Person { Name = p.Name, Age = 4 });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.IsTrue(sql.Contains("JOIN"));
@@ -226,15 +226,15 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-                .Where(j => j.Left.Age > 18)
-                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+                .Where<Pet>((p,pt) => p.Age > 18 && pt.Name != null)
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
                 "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
                 +" INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
-                +"WHERE [t1].[Age] > @p0"
-                ,sql);
+                + "WHERE ([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)"
+                , sql);
         }
 
         [Table("DummyTable")]

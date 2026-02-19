@@ -97,7 +97,7 @@ namespace DLinq
             {
                 sb.Append(string.Join(", ", ast.Columns.Select(c =>
                 {
-                    var col = FormatColumn(c.Name, c.Table ?? ast.Alias, c.IsLiteralValue);
+                    var col = FormatColumn(c.Name, c.Table ?? ast.TableAlias, c.IsLiteralValue);
                     var alias = string.IsNullOrEmpty(c.Alias) ? "" : $" AS {FormatColumn(c.Alias)}";
                     return $"{col}{alias}";
                 })));
@@ -116,12 +116,12 @@ namespace DLinq
             }
             else
             {
-                sb.Append(FormatTable(ast.Table, ast.Alias));
+                sb.Append(FormatTable(ast.FromTable, ast.TableAlias));
             }
             // JOIN support
-            if (ast is SqlJoinSelectNode joinAst && joinAst.Joins != null)
+            if (ast.Joins != null)
             {
-                foreach (var join in joinAst.Joins)
+                foreach (var join in ast.Joins)
                 {
                     sb.Append($" {join.JoinType.ToUpper()} JOIN ");
                     sb.Append(FormatTable(join.RightTable, join.RightAlias));
@@ -129,15 +129,15 @@ namespace DLinq
                     sb.Append(join.OnClause);
                 }
             }
-            if (!string.IsNullOrEmpty(ast.WhereSql))
+            if (!string.IsNullOrEmpty(ast.WhereSqlExpr))
             {
                 sb.Append(" WHERE ");
-                sb.Append(ast.WhereSql);
+                sb.Append(ast.WhereSqlExpr);
             }
             if (ast.OrderBy != null && ast.OrderBy.Count > 0)
             {
                 sb.Append(" ORDER BY ");
-                sb.Append(string.Join(", ", ast.OrderBy.Select(o => $"{FormatColumn(o.Column, ast.Alias)}{(o.Descending ? " DESC" : " ASC")}")));
+                sb.Append(string.Join(", ", ast.OrderBy.Select(o => $"{FormatColumn(o.Column.Name, o.Column.Table)}{(o.Descending ? " DESC" : " ASC")}")));
             }
             if (ast.Take.HasValue)
             {

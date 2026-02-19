@@ -38,8 +38,8 @@ namespace DLinqTests
         [TestMethod]
         public void SqlWhereNode_Properties()
         {
-            var where = new SqlWhereNode { Column = "Col", Operator = "=", Value = 42, IsSubQuery = true };
-            Assert.AreEqual("Col", where.Column);
+            var where = new SqlWhereNode { Column = new Column("schema","table","colName","colAlias",false), Operator = "=", Value = 42, IsSubQuery = true };
+            Assert.AreEqual("colName", where.Column.Name);
             Assert.AreEqual("=", where.Operator);
             Assert.AreEqual(42, where.Value);
             Assert.IsTrue(where.IsSubQuery);

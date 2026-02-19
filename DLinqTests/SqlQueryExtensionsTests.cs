@@ -15,11 +15,11 @@ namespace DLinqTests
             Assert.ThrowsException<NotSupportedException>(() => SqlQueryExtensions.ToSql(queryable));
         }
 
-        private class DummyQueryable : IQueryable
+        private class DummyQueryable : SqlQuery
         {
-            public Type ElementType => typeof(object);
+            public new Type ElementType => typeof(object);
             public System.Linq.Expressions.Expression Expression => System.Linq.Expressions.Expression.Constant(this);
-            public IQueryProvider Provider => new DummyProvider();
+            public new IQueryProvider Provider => new DummyProvider();
             public System.Collections.IEnumerator GetEnumerator() => throw new NotImplementedException();
         }
         private class DummyProvider : IQueryProvider

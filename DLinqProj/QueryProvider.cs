@@ -31,12 +31,12 @@ namespace DLinq
 
         public IQueryable<TElement> CreateQuery<TElement>(Expression expression)
         {
-            return new SqlQuery<TElement>(this, expression);
+            return (IQueryable<TElement>) new SqlQuery<TElement>(this);
         }
 
         public object Execute(Expression expression)
         {
-            var sql = _translator.Translate(expression, out var parameters);
+            var sql = (string)null; // _translator.Translate(expression, out var parameters);
             return sql;
         }
 

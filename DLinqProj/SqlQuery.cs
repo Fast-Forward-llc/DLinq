@@ -9,23 +9,30 @@ using System.Threading.Tasks;
 
 namespace DLinq
 {
-    public class SqlQuery<T> : IOrderedQueryable<T>
+    public abstract class SqlQuery //: IQueryable
     {
-        public Expression Expression { get; }
-        public Type ElementType => typeof(T);
-        public IQueryProvider Provider { get; }
+        public SqlSelectNode selectNode = new SqlSelectNode();
+        public Type ElementType { get; protected set; }
+        public IQueryProvider Provider { get; protected set; }
 
-        // Optionally, you could add an Alias property here if you want to track it at the query level
-        // public string? Alias { get; set; }
+        //public Expression Expression => throw new NotImplementedException();
 
-        public SqlQuery(QueryProvider provider, Expression expression = null)
+        //public IEnumerator GetEnumerator() => throw new NotImplementedException();
+
+    }
+
+    public class SqlQuery<T> : SqlQuery //, IOrderedQueryable<T>
+    {
+        public SqlQuery(QueryProvider provider)
         {
+            ElementType = typeof(T);
             Provider = provider;
-            Expression = expression ?? Expression.Constant(this);
+            selectNode.FromEntity = ElementType;
+            //Expression = expression ?? Expression.Constant(this);
         }
 
-        public IEnumerator<T> GetEnumerator() => throw new NotImplementedException();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        //public new IEnumerator<T> GetEnumerator() => throw new NotImplementedException();
+        //IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         // Method to generate Insert SQL for the specified entity
         public (string sql, object parameters) ToInsertSql(T entity, InsertOptions? options = null)
@@ -114,88 +121,148 @@ namespace DLinq
             throw new NotSupportedException("ToDeleteSql is only supported for SqlQuery using QueryProvider.");
         }
 
+        public SqlQuery<T> FromFunction(string functionName, params object[] args)
+        {
+            this.selectNode.FromFunction = new SqlFunctionSource() { FunctionName = functionName, Arguments = args.ToList() };
+            return this;
+        }
+
         public SqlQuery<T> Where(Expression<Func<T, bool>> predicate)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
-            // Compose the new expression tree
-            var call = Expression.Call(
-                typeof(Queryable),
-                nameof(Queryable.Where),
-                new Type[] { typeof(T) },
-                this.Expression,
-                Expression.Quote(predicate)
-            );
-            return new SqlQuery<T>((QueryProvider)this.Provider, call);
+            this.selectNode.WhereExpr = predicate;
+            return this;
         }
-        public SqlQuery<TResult> Select<TResult>(Expression<Func<T, TResult>> selector)
+        public SqlQuery<T> Where<T1>(Expression<Func<T,T1, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.WhereExpr = predicate;
+            return this;
+        }
+        private void AddOrderBy(LambdaExpression expression, bool descending)
+        {
+            if (expression == null) throw new ArgumentNullException(nameof(expression));
+            
+            var body = expression.Body;
+            
+            // Unwrap UnaryExpression (Convert/ConvertChecked)
+            if (body is UnaryExpression unary && 
+                (unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked))
+            {
+                body = unary.Operand;
+            }
+            
+            if (body is not MemberExpression)
+                throw new NotSupportedException("Only simple member OrderBy/ThenBy supported.");
+                
+            this.selectNode.OrderByExpr.Add((expression, descending));
+        }
+
+        public SqlQuery<T> OrderBy(Expression<Func<T, object>> expression)
+        {
+            AddOrderBy(expression, false);
+            return this;
+        }
+        public SqlQuery<T> OrderByDecending(Expression<Func<T, object>> expression)
+        {
+            AddOrderBy(expression, true);
+            return this;
+        }
+        public SqlQuery<T> ThenBy(Expression<Func<T, object>> expression)
+        {
+            AddOrderBy(expression, false);
+            return this;
+        }
+        public SqlQuery<T> ThenByDecending(Expression<Func<T, object>> expression)
+        {
+            AddOrderBy(expression, true);
+            return this;
+        }
+        public SqlQuery<T> Skip(int? count)
+        {
+            this.selectNode.Skip = count;
+            return this;
+        }
+        public SqlQuery<T> Take(int? count)
+        {
+            this.selectNode.Take = count;
+            return this;
+        }
+        public SqlQuery<T> Select(Expression<Func<T,object>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+            this.selectNode.SelectExpr = selector;
+            return this;
+        }
+
+        public SqlQuery<T> Select<T1>(Expression<Func<T1, object>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+            this.selectNode.SelectExpr = selector;
+            return this;
+        }
+
+        public SqlQuery<T> Select<T1,T2>(Expression<Func<T1, T2, object>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+            this.selectNode.SelectExpr = selector;
+            return this;
+        }
+        public SqlQuery<T> Select<T1,T2,T3>(Expression<Func<T1, T2, T3, object>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+            this.selectNode.SelectExpr = selector;
+            return this;
+        }
+        public SqlQuery<T> Select<T1, T2, T3, T4>(Expression<Func<T1, T2, T3, T4, object>> selector)
         {
             if (selector == null) throw new ArgumentNullException(nameof(selector));
 
-            var call = Expression.Call(
-                typeof(Queryable),
-                nameof(Queryable.Select),
-                new Type[] { typeof(T), typeof(TResult) },
-                this.Expression,
-                Expression.Quote(selector)
-            );
+            this.selectNode.SelectExpr = selector;
 
-            return (SqlQuery<TResult>)Provider.CreateQuery<TResult>(call);
+            return this;
         }
-        public SqlQuery<JoinResult<T, TRight>> Join<TRight>(
+        public SqlQuery<T> Select<T1, T2, T3, T4, T5>(Expression<Func<T1, T2, T3, T4, T5, object>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+
+            this.selectNode.SelectExpr = selector;
+
+            return this;
+        }
+        public SqlQuery<T> Select<T1, T2, T3, T4, T5, T6>(Expression<Func<T1, T2, T3, T4, T5, T6, object>> selector)
+        {
+            if (selector == null) throw new ArgumentNullException(nameof(selector));
+
+            this.selectNode.SelectExpr = selector;
+
+            return this;
+        }
+        public SqlQuery<T> Join<TLeft,TRight>(
+            Expression<Func<TLeft, TRight, bool>> onPredicate)
+        {
+            if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
+
+            this.selectNode.Joins.Add(
+                new SqlJoin<TLeft, TRight>()
+                {
+                    onPredicate = onPredicate
+                }
+                );
+            return this;
+        }
+        public SqlQuery<T> Join<TRight>(
             Expression<Func<T, TRight, bool>> onPredicate)
         {
             if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
 
-            // Internally create the right query using the same provider
-            var right = new SqlQuery<TRight>((QueryProvider)this.Provider);
-
-            var joinResultType = typeof(JoinResult<,>).MakeGenericType(typeof(T), typeof(TRight));
-
-            // Prefer reusing the onPredicate parameters (if available) so parameter identity is preserved in the expression tree.
-            ParameterExpression leftParam;
-            ParameterExpression rightParam;
-            if (onPredicate != null && onPredicate.Parameters.Count >= 2)
-            {
-                // Use the same ParameterExpression instances from the onPredicate
-                leftParam = onPredicate.Parameters[0];
-                rightParam = onPredicate.Parameters[1];
-            }
-            else
-            {
-                leftParam = Expression.Parameter(typeof(T), "l");
-                rightParam = Expression.Parameter(typeof(TRight), "r");
-            }
-
-            var ctor = joinResultType.GetConstructor(new[] { typeof(T), typeof(TRight) });
-            var members = new MemberInfo[] {
-                joinResultType.GetProperty("Left"),
-                joinResultType.GetProperty("Right")
-            };
-            var newExpr = Expression.New(ctor, new Expression[] { leftParam, rightParam }, members);
-            var resultSelector = Expression.Lambda(newExpr, leftParam, rightParam);
-            // Compose a custom Join expression node for the translator
-            var call = Expression.Call(
-                typeof(SqlQuery<T>),    // <--- use SqlQuery instead of Queryable
-                "Join",
-                new[] { typeof(T), typeof(TRight), joinResultType },
-                this.Expression,
-                right.Expression,
-                Expression.Quote(onPredicate),
-                Expression.Quote(resultSelector)
-            );
-            return (SqlQuery<JoinResult<T, TRight>>)Provider.CreateQuery(call);
+            this.selectNode.Joins.Add(
+                new SqlJoin<T, TRight>()
+                {
+                    onPredicate = onPredicate
+                }
+                );
+            return this;
         }
-
-        internal static IQueryable<TResult> Join<TLeft, TRight, TResult>(
-            IQueryable<TLeft> left,
-            IQueryable<TRight> right,
-            Expression<Func<TLeft, TRight, bool>> onPredicate,
-            Expression<Func<TLeft, TRight, TResult>> resultSelector)
-        {
-            // This method is only a marker for expression-tree construction and translation.
-            throw new NotSupportedException("This method is only intended for use in expression trees.");
-        }
-
-
     }
 }

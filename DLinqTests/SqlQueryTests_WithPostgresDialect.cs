@@ -49,9 +49,13 @@ namespace DLinqTests
             public int OwnerId { get; set; }
             public string Name { get; set; }
         }
-
+        [Table("person")]
         private class PersonPet
         {
+            [Key]
+            [Column("Id")]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int PersonId { get; set; }
             public string PersonName { get; set; }
             public string PetName { get; set; }
         }
@@ -211,8 +215,8 @@ namespace DLinqTests
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
-                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+                .Join<Pet>((Person, pet) => Person.Id == pet.OwnerId)
+                .Select<Person,Pet>((p,pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual("SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\" FROM \"Person\" AS \"t1\" "
@@ -225,7 +229,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
-                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
@@ -240,8 +244,8 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-                .Where(j => j.Left.Age > 18)
-                .Select(j => new { PersonName = j.Left.Name, PetName = j.Right.Name });
+                .Where(x => x.Age > 18)
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
@@ -256,19 +260,20 @@ namespace DLinqTests
         [TestMethod]
         public void Join_MultipleOfSameTable_GeneratesSql()
         {
+            var minAge = 18;
             var provider = GetProvider();
             var query = new SqlQuery<Person3>(provider)
-                .Where(p => p.Age > 18)
+                .Where(p => p.Age > minAge)
                 .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
-                .Join<ModifiedByUser>((prevJoin, user) => prevJoin.Left.ModifiedByUserId == user.Id)
-                .Select(j => new { PersonName = j.Left.Left.Name, CreatedByUser = j.Left.Right.Name, ModifiedByUser = j.Right.Name });
+                .Join<ModifiedByUser>((person, user) => person.ModifiedByUserId == user.Id)
+                .Select<Person, CreatedByUser, ModifiedByUser>((p,c,m) => new { PersonName = p.Name, CreatedByUser = c.Name, ModifiedByUser = m.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
-                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t3\".\"Name\" AS \"CreatedByUser\", \"t2\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
-                +"INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"ModifiedByUserId\" = \"t2\".\"Id\" "
-                +"INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
-                +"WHERE \"t1\".\"Age\" > @p0"
+                "SELECT \"t4\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"CreatedByUser\", \"t3\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
+                + "INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"CreatedByUserId\" = \"t2\".\"Id\" "
+                + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"ModifiedByUserId\" = \"t3\".\"Id\" "
+                + "WHERE \"t1\".\"Age\" > @p0"
                 , sql);
             Assert.IsTrue(sql.Contains("WHERE"));
             Assert.IsTrue(sql.Contains("Age"));
@@ -279,11 +284,12 @@ namespace DLinqTests
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person3>(provider)
+                .Join<Person3, ModifiedByUser>((person, modifiedByUser) => person.ModifiedByUserId == modifiedByUser.Id)
+                .Join<Person3, CreatedByUser>((person, createdByUser) => person.CreatedByUserId == createdByUser.Id)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-                .Join<Person3, Pet, CreatedByUser>((person, createdByUser) => person.CreatedByUserId == createdByUser.Id)
-                .Join<Person3, Pet, CreatedByUser, ModifiedByUser>((person, modifiedByUser) => person.ModifiedByUserId == modifiedByUser.Id)
-                .Where<Person3, Pet, CreatedByUser, ModifiedByUser>((person, pet, createdByUser, modifiedByUser) => person.Age > 18)
-                .Select<Person3, Pet, CreatedByUser, ModifiedByUser, object>((person, pet, createdByUser, modifiedByUser) => new { PersonName = person.Name, PetName = pet.Name, CreatedByUser = createdByUser.Name, ModifiedByUser = modifiedByUser.Name });
+                .Where((person) => person.Age > 18)
+                .Select<Person3, Pet, CreatedByUser, ModifiedByUser>((person, pet, cu, mu) => new { PersonName = person.Name, PetName = pet.Name, CreatedByUser = cu.Name, ModifiedByUser = mu.Name });
+
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(

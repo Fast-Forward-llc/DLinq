@@ -36,7 +36,7 @@ namespace DLinqTests
         {
             var ast = new SqlSelectNode
             {
-                Table = "T",
+                FromTable = "T",
                 Columns = new List<Column>
                 {
                     new Column(null, null, "A"),
@@ -53,8 +53,8 @@ namespace DLinqTests
         {
             var ast = new SqlSelectNode
             {
-                Table = "T",
-                Alias = "T1",
+                FromTable = "T",
+                TableAlias = "T1",
                 Columns = new List<Column>
                 {
                     new Column(null, null, "A"),
@@ -122,7 +122,7 @@ namespace DLinqTests
         {
             var ast = new SqlSelectNode
             {
-                Table = "T",
+                FromTable = "T",
                 Columns = new List<Column>
                 {
                     new Column(null, null, "A"),
@@ -138,8 +138,8 @@ namespace DLinqTests
         {
             var ast = new SqlSelectNode
             {
-                Table = "T",
-                Alias = "T1",
+                FromTable = "T",
+                TableAlias = "T1",
                 Columns = new List<Column>
                 {
                     new Column(null, null, "A"),
