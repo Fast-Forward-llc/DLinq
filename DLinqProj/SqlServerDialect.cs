@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Dynamic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using static DLinq.PostgresDialect;
 
@@ -106,7 +107,6 @@ namespace DLinq
             }
             if (!string.IsNullOrEmpty(ast.WhereSqlExpr))
             {
-                sb.Append(" WHERE ");
                 sb.Append(ast.WhereSqlExpr);
             }
             if (ast.OrderBy != null && ast.OrderBy.Count > 0)
@@ -144,25 +144,58 @@ namespace DLinq
             {
                 sql += $" OUTPUT inserted.*";
             }
-            sql += whereClauses.Any() ? $" WHERE {string.Join(" AND ", whereClauses)}" : "";
+            sql += WhereClauseFromFragments(whereClauses);
             return sql;
         }
 
         public string DeleteStatement(string tableName, object whereValues)
         {
-            var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
-            var whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
-            var sql = $"DELETE FROM {FormatTable(tableName)}";
-            if (whereClauses.Any())
+            IEnumerable<string> whereClauses = Enumerable.Empty<string>();
+            if (whereValues != null)
             {
-                sql += $" WHERE {string.Join(" AND ", whereClauses)}";
+                var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
+                whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
             }
+            var sql = $"DELETE FROM {FormatTable(tableName)}";
+            sql += WhereClauseFromFragments(whereClauses);
+
             return sql;
+        }
+
+        public string WhereClauseFromFragments(IEnumerable<string> clauseFragments, string logicalOperator = "AND")
+        {
+            if (clauseFragments == null || !clauseFragments.Any()) return string.Empty;
+            return "\r\nWHERE " + string.Join($" {logicalOperator} ", clauseFragments);
         }
 
         public string IdentityValueExpression(string tableName, string columnName)
         {
             return "SCOPE_IDENTITY()";
+        }
+
+        public string MapExpressionTypeToSqlOperator(ExpressionType expressionType)
+        {
+            return expressionType switch
+            {
+                ExpressionType.Equal => "=",
+                ExpressionType.NotEqual => "<>",
+                ExpressionType.GreaterThan => ">",
+                ExpressionType.GreaterThanOrEqual => ">=",
+                ExpressionType.LessThan => "<",
+                ExpressionType.LessThanOrEqual => "<=",
+                ExpressionType.AndAlso => "AND",
+                ExpressionType.OrElse => "OR",
+                ExpressionType.Add => "+",
+                ExpressionType.Subtract => "-",
+                ExpressionType.Multiply => "*",
+                ExpressionType.Divide => "/",
+                ExpressionType.Modulo => "%",
+                ExpressionType.And => "&",
+                ExpressionType.Or => "|",
+                ExpressionType.Coalesce => "COALESCE",
+                ExpressionType.ExclusiveOr => "||",
+                _ => throw new NotSupportedException($"Expression type '{expressionType}' is not supported.")
+            };
         }
 
         private IFormatProvider? sqlFormatProvider;

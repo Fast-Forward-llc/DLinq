@@ -1,7 +1,8 @@
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Dynamic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Text;
 
 namespace DLinq
 {
@@ -131,7 +132,6 @@ namespace DLinq
             }
             if (!string.IsNullOrEmpty(ast.WhereSqlExpr))
             {
-                sb.Append(" WHERE ");
                 sb.Append(ast.WhereSqlExpr);
             }
             if (ast.OrderBy != null && ast.OrderBy.Count > 0)
@@ -167,7 +167,7 @@ namespace DLinq
             var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
             var setClauses = setDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
             var whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
-            var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)} WHERE {string.Join(" AND ", whereClauses)}";
+            var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)}{WhereClauseFromFragments(whereClauses)}";
             if (options.SelectAfterMutation && primaryKeys.Count > 0)
             {
                 //var selectWhere = string.Join(" AND ", primaryKeys.Select(pk => $"{FormatColumn(pk.colName)} = @{pk.colName}"));
@@ -181,13 +181,16 @@ namespace DLinq
             var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
             var whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
             var sql = $"DELETE FROM {FormatTable(tableName)}";
-            if (whereClauses.Any())
-            {
-                sql += $" WHERE {string.Join(" AND ", whereClauses)}";
-            }
+            sql += WhereClauseFromFragments(whereClauses);
+            
             return sql;
         }
 
+        public string WhereClauseFromFragments(IEnumerable<string> clauseFragments, string logicalOperator = "AND")
+        {
+            if (clauseFragments == null || !clauseFragments.Any()) return string.Empty;
+            return "\r\nWHERE " + string.Join($" {logicalOperator} ", clauseFragments);
+        }
         public string IdentityValueExpression(string tableName, string columnName)
         {
             // Returns the last inserted identity value for the given table and column
@@ -230,6 +233,31 @@ namespace DLinq
                 result = result.Replace("__", "_");
             // Trim leading/trailing underscores
             return result.Trim('_');
+        }
+
+        public string MapExpressionTypeToSqlOperator(ExpressionType expressionType)
+        {
+            return expressionType switch
+            {
+                ExpressionType.Equal => "=",
+                ExpressionType.NotEqual => "<>",
+                ExpressionType.GreaterThan => ">",
+                ExpressionType.GreaterThanOrEqual => ">=",
+                ExpressionType.LessThan => "<",
+                ExpressionType.LessThanOrEqual => "<=",
+                ExpressionType.AndAlso => "AND",
+                ExpressionType.OrElse => "OR",
+                ExpressionType.Add => "+",
+                ExpressionType.Subtract => "-",
+                ExpressionType.Multiply => "*",
+                ExpressionType.Divide => "/",
+                ExpressionType.Modulo => "%",
+                ExpressionType.And => "&",
+                ExpressionType.Or => "|",
+                ExpressionType.Coalesce => "COALESCE",
+                ExpressionType.ExclusiveOr => "||",
+                _ => throw new NotSupportedException($"Expression type '{expressionType}' is not supported.")
+            };
         }
 
         private IFormatProvider? sqlFormatProvider;

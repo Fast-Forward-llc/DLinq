@@ -79,7 +79,7 @@ namespace DLinqTests
         {
             var sql = dialect.UpdateStatement("T", new { A = 1, C = "Qwerty" }, new { B = 2 }, new DLinq.UpdateOptions(), new List<(string, object)>());
             Console.WriteLine(sql);
-            Assert.AreEqual("UPDATE [T] SET [A] = @A, [C] = @C WHERE [B] = @B", sql);
+            Assert.AreEqual("UPDATE [T] SET [A] = @A, [C] = @C\r\nWHERE [B] = @B", sql);
         }
 
         [TestMethod]
@@ -87,7 +87,7 @@ namespace DLinqTests
         {
             var sql = dialect.DeleteStatement("T", new { A = 1 });
             Console.WriteLine(sql);
-            Assert.AreEqual("DELETE FROM [T] WHERE [A] = @A", sql);
+            Assert.AreEqual("DELETE FROM [T]\r\nWHERE [A] = @A", sql);
         }
     }
 
@@ -164,7 +164,7 @@ namespace DLinqTests
         {
             var sql = dialect.UpdateStatement("T", new { A = 1, C = "Qwerty" }, new { B = 2 }, new DLinq.UpdateOptions(), new List<(string, object)>());
             Console.WriteLine(sql);
-            Assert.AreEqual("UPDATE \"T\" SET \"A\" = @A, \"C\" = @C WHERE \"B\" = @B", sql);
+            Assert.AreEqual("UPDATE \"T\" SET \"A\" = @A, \"C\" = @C\r\nWHERE \"B\" = @B", sql);
         }
 
         [TestMethod]
@@ -172,7 +172,7 @@ namespace DLinqTests
         {
             var sql = dialect.DeleteStatement("T", new { A = 1 });
             Console.WriteLine(sql); 
-            Assert.AreEqual("DELETE FROM \"T\" WHERE \"A\" = @A", sql);
+            Assert.AreEqual("DELETE FROM \"T\"\r\nWHERE \"A\" = @A", sql);
         }
     }
 }

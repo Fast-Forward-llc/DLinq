@@ -29,7 +29,27 @@ namespace DLinqTests
         {
             return $"UPDATE {options?.TableName ?? tableName}";
         }
+
+        public string WhereClauseFromFragments(IEnumerable<string> clauseFragments, string logicalOperator = "AND")
+        {
+            return "\r\nWHERE "+string.Join($" {logicalOperator} ", clauseFragments);
+        }
         public string IdentityValueExpression(string tableName, string columnName) => "<identity>";
         public IFormatProvider SqlFormatter => null!;
+        public string MapExpressionTypeToSqlOperator(System.Linq.Expressions.ExpressionType expressionType)
+        {
+            return expressionType switch
+            {
+                System.Linq.Expressions.ExpressionType.Equal => "=",
+                System.Linq.Expressions.ExpressionType.NotEqual => "<>",
+                System.Linq.Expressions.ExpressionType.GreaterThan => ">",
+                System.Linq.Expressions.ExpressionType.GreaterThanOrEqual => ">=",
+                System.Linq.Expressions.ExpressionType.LessThan => "<",
+                System.Linq.Expressions.ExpressionType.LessThanOrEqual => "<=",
+                System.Linq.Expressions.ExpressionType.AndAlso => "AND",
+                System.Linq.Expressions.ExpressionType.OrElse => "OR",
+                _ => throw new NotSupportedException($"Expression type {expressionType} is not supported.")
+            };
+        }
     }
 }

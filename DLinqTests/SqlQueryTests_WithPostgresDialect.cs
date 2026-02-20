@@ -8,6 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Dynamic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Text.Json;
 
 namespace DLinqTests
 {
@@ -76,7 +77,8 @@ namespace DLinqTests
         private class Customer
         {
             public int Id { get; set; }
-            public string Name { get; set; }
+            public string FirstName { get; set; }
+            public string LastName { get; set; }
         }
 
         private class Product
@@ -92,7 +94,18 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Where_GeneratesSql()
+        public void Select_All_Projection()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Customer>(provider).Select(c => new { FullName = c.FirstName + " " + c.LastName, DepartmentId = 7 });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine($"{sql}\r\n{JsonSerializer.Serialize(parameters)}");
+            Assert.AreEqual("SELECT ((\"t1\".\"FirstName\" + @p0) + \"t1\".\"LastName\") AS \"FullName\", @p1 AS \"DepartmentId\" FROM \"Customer\" AS \"t1\"", sql);
+        }
+
+
+        [TestMethod]
+        public void Where()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);
@@ -105,7 +118,33 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void OrderBy_GeneratesSql()
+        public void Where_Contains()
+        {
+            var ids = new[] { 1, 2, 3 };
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => ids.Contains(x.Id));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("Id"));
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Id\" IN (1, 2, 3)", sql);
+        }
+
+        [TestMethod]
+        public void Where_NotContains()
+        {
+            var ids = new[] { 1, 2, 3 };
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => !ids.Contains(x.Id));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("WHERE"));   
+            Assert.IsTrue(sql.Contains("Id"));
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Id\" NOT IN (1, 2, 3)", sql);
+        }
+
+        [TestMethod]
+        public void OrderBy()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider).OrderBy(x => x.Name);
@@ -115,7 +154,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void SkipTake_GeneratesSql()
+        public void SkipTake()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider).Skip(5).Take(10);
@@ -125,7 +164,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void ToInsertSql_GeneratesSql()
+        public void ToInsertSql()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider);
@@ -135,7 +174,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void ToUpdateSql_GeneratesSql()
+        public void ToUpdateSql()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider);
@@ -145,7 +184,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void ToDeleteSql_GeneratesSql()
+        public void ToDeleteSql()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider);
@@ -211,7 +250,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_GeneratesSql()
+        public void Join()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
@@ -224,7 +263,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_WithMultipleConditions_GeneratesSql()
+        public void Join_WithMultipleConditions()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
@@ -239,7 +278,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_ChainedWithWhereAndSelect_GeneratesSql()
+        public void Join_ChainedWithWhereAndSelect()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
@@ -250,29 +289,7 @@ namespace DLinqTests
             Console.WriteLine(sql);
             Assert.AreEqual(
                 "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\" FROM \"Person\" AS \"t1\" "
-                +"INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
-                +"WHERE \"t1\".\"Age\" > @p0"
-                , sql);
-            Assert.IsTrue(sql.Contains("WHERE"));
-            Assert.IsTrue(sql.Contains("Age"));
-        }
-
-        [TestMethod]
-        public void Join_MultipleOfSameTable_GeneratesSql()
-        {
-            var minAge = 18;
-            var provider = GetProvider();
-            var query = new SqlQuery<Person3>(provider)
-                .Where(p => p.Age > minAge)
-                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
-                .Join<ModifiedByUser>((person, user) => person.ModifiedByUserId == user.Id)
-                .Select<Person, CreatedByUser, ModifiedByUser>((p,c,m) => new { PersonName = p.Name, CreatedByUser = c.Name, ModifiedByUser = m.Name });
-            var (sql, parameters) = query.ToSql();
-            Console.WriteLine(sql);
-            Assert.AreEqual(
-                "SELECT \"t4\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"CreatedByUser\", \"t3\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
-                + "INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"CreatedByUserId\" = \"t2\".\"Id\" "
-                + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"ModifiedByUserId\" = \"t3\".\"Id\" "
+                + "INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\"\r\n"
                 + "WHERE \"t1\".\"Age\" > @p0"
                 , sql);
             Assert.IsTrue(sql.Contains("WHERE"));
@@ -280,7 +297,29 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_MultipleWithSurrogates_GeneratesSql()
+        public void Join_MultipleOfSameTable()
+        {
+            var minAge = 18;
+            var provider = GetProvider();
+            var query = new SqlQuery<Person3>(provider)
+                .Where(p => p.Age > minAge)
+                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
+                .Join<ModifiedByUser>((person, user) => person.ModifiedByUserId == user.Id)
+                .Select<Person3, CreatedByUser, ModifiedByUser>((p,c,m) => new { PersonName = p.Name, CreatedByUser = c.Name, ModifiedByUser = m.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"CreatedByUser\", \"t3\".\"Name\" AS \"ModifiedByUser\" FROM \"person\" AS \"t1\" "
+                +"INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"CreatedByUserId\" = \"t2\".\"Id\" "
+                + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"ModifiedByUserId\" = \"t3\".\"Id\"\r\n"
+                + "WHERE \"t1\".\"Age\" > @p0"
+                , sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("Age"));
+        }
+
+        [TestMethod]
+        public void Join_MultipleWithSurrogates()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person3>(provider)
@@ -297,8 +336,8 @@ namespace DLinqTests
                 +"FROM \"person\" AS \"t1\" "
                 +"INNER JOIN \"Users\" AS \"t2\" ON \"t1\".\"ModifiedByUserId\" = \"t2\".\"Id\" "
                 +"INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\" "
-                +"INNER JOIN \"Pet\" AS \"t4\" ON \"t1\".\"Id\" = \"t4\".\"OwnerId\" "
-                +"WHERE \"t1\".\"Age\" > @p0"
+                + "INNER JOIN \"Pet\" AS \"t4\" ON \"t1\".\"Id\" = \"t4\".\"OwnerId\"\r\n"
+                + "WHERE \"t1\".\"Age\" > @p0"
                 , sql);
             Assert.IsTrue(sql.Contains("WHERE"));
             Assert.IsTrue(sql.Contains("Age"));

@@ -9,30 +9,74 @@ using System.Threading.Tasks;
 
 namespace DLinq
 {
-    public abstract class SqlQuery //: IQueryable
+    public abstract class SqlQuery 
     {
         public SqlSelectNode selectNode = new SqlSelectNode();
         public Type ElementType { get; protected set; }
         public IQueryProvider Provider { get; protected set; }
 
-        //public Expression Expression => throw new NotImplementedException();
+        public static LambdaExpression BuildPredicate(FilterCriteria[] filters, string boolOperator)
+        {
+            if (filters == null || filters.Length == 0)
+                throw new ArgumentException("At least one filter is required.");
 
-        //public IEnumerator GetEnumerator() => throw new NotImplementedException();
+            if (!(string.Equals(boolOperator,"AND", StringComparison.OrdinalIgnoreCase) || string.Equals(boolOperator, "OR", StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("Only 'AND' and 'OR' are supported.");
+            boolOperator = boolOperator.ToUpper();
+            // Get distinct entity types in order of first appearance
+            var entityTypes = filters.Select(f => f.EntityType).Distinct().ToArray();
+            var parameters = entityTypes.Select((t, i) => Expression.Parameter(t, $"e{i + 1}")).ToArray();
 
+            // Build each filter expression
+            var expressions = filters.Select(filter =>
+            {
+                // Find the parameter for the filter's entity type
+                int paramIndex = Array.FindIndex(entityTypes, t => t == filter.EntityType);
+                if (paramIndex == -1)
+                    throw new ArgumentException($"EntityType {filter.EntityType.Name} not found in generic parameters.");
+
+                var param = parameters[paramIndex];
+                var property = Expression.PropertyOrField(param, filter.PropertyName);
+
+                // Convert right operand to the property type
+                var right = Expression.Constant(Convert.ChangeType(filter.RightOperand, property.Type), property.Type);
+
+                // Build the comparison
+                return filter.Operator switch
+                {
+                    ExpressionType.Equal => Expression.Equal(property, right),
+                    ExpressionType.NotEqual => Expression.NotEqual(property, right),
+                    ExpressionType.GreaterThan => Expression.GreaterThan(property, right),
+                    ExpressionType.GreaterThanOrEqual => Expression.GreaterThanOrEqual(property, right),
+                    ExpressionType.LessThan => Expression.LessThan(property, right),
+                    ExpressionType.LessThanOrEqual => Expression.LessThanOrEqual(property, right),
+                    _ => throw new NotSupportedException($"Unsupported ExpressionType: {filter.Operator}")
+                };
+            }).ToArray();
+
+            // Combine all expressions with the specified boolean operator
+            Expression combined = expressions[0];
+            for (int i = 1; i < expressions.Length; i++)
+            {
+                combined = boolOperator == "AND"
+                    ? Expression.AndAlso(combined, expressions[i])
+                    : Expression.OrElse(combined, expressions[i]);
+            }
+
+            // Build the lambda: (T1 e1, ..., T3 e3) => combined
+            var funcType = Expression.GetFuncType(parameters.Select(p => p.Type).Concat(new[] { typeof(bool) }).ToArray());
+            return Expression.Lambda(funcType, combined, parameters);
+        }
     }
 
-    public class SqlQuery<T> : SqlQuery //, IOrderedQueryable<T>
+    public class SqlQuery<T> : SqlQuery 
     {
         public SqlQuery(QueryProvider provider)
         {
             ElementType = typeof(T);
             Provider = provider;
             selectNode.FromEntity = ElementType;
-            //Expression = expression ?? Expression.Constant(this);
         }
-
-        //public new IEnumerator<T> GetEnumerator() => throw new NotImplementedException();
-        //IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         // Method to generate Insert SQL for the specified entity
         public (string sql, object parameters) ToInsertSql(T entity, InsertOptions? options = null)
@@ -88,7 +132,7 @@ namespace DLinq
         {
             if (Provider is QueryProvider qp)
             {
-                return qp.Translator.GenerateDeleteSql(typeof(T), wherePredicate?.Body, options);
+                return qp.Translator.GenerateDeleteSql(typeof(T), wherePredicate, options);
             }
             throw new NotSupportedException("ToDeleteSql is only supported for SqlQuery using QueryProvider.");
         }
@@ -126,6 +170,12 @@ namespace DLinq
             this.selectNode.FromFunction = new SqlFunctionSource() { FunctionName = functionName, Arguments = args.ToList() };
             return this;
         }
+        public SqlQuery<T> Where(LambdaExpression predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.WhereExpr = predicate;
+            return this;
+        }
 
         public SqlQuery<T> Where(Expression<Func<T, bool>> predicate)
         {
@@ -134,6 +184,24 @@ namespace DLinq
             return this;
         }
         public SqlQuery<T> Where<T1>(Expression<Func<T,T1, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.WhereExpr = predicate;
+            return this;
+        }
+        public SqlQuery<T> Where<T1,T2>(Expression<Func<T, T1,T2, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.WhereExpr = predicate;
+            return this;
+        }
+        public SqlQuery<T> Where<T1,T2,T3>(Expression<Func<T, T1, T2, T3, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.WhereExpr = predicate;
+            return this;
+        }
+        public SqlQuery<T> Where<T1,T2,T3,T4>(Expression<Func<T, T1, T2, T3, T4, bool>> predicate)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
             this.selectNode.WhereExpr = predicate;
@@ -163,7 +231,7 @@ namespace DLinq
             AddOrderBy(expression, false);
             return this;
         }
-        public SqlQuery<T> OrderByDecending(Expression<Func<T, object>> expression)
+        public SqlQuery<T> OrderByDescending(Expression<Func<T, object>> expression)
         {
             AddOrderBy(expression, true);
             return this;
@@ -173,7 +241,7 @@ namespace DLinq
             AddOrderBy(expression, false);
             return this;
         }
-        public SqlQuery<T> ThenByDecending(Expression<Func<T, object>> expression)
+        public SqlQuery<T> ThenByDescending(Expression<Func<T, object>> expression)
         {
             AddOrderBy(expression, true);
             return this;
@@ -264,5 +332,7 @@ namespace DLinq
                 );
             return this;
         }
+
+        
     }
 }
