@@ -25,11 +25,11 @@ var dlinq = new DLinqConnection(connection, new SqlServerDialect());
 var adults = dlinq.Query<Person>(x => x.Age > 18).ToList();
 
 // Query with SqlQuery
-var query = dlinq.QueryBuilder<Person>().OrderBy(x => x.Age).Skip(2).Take(5).ToSqlQuery();
+var query = dlinq.QueryBuilder<Person>().OrderBy(x => x.Age).Skip(2).Take(5);
 var results = dlinq.Query<Person>(query).ToList();
 
 // Query Person and project to Employee (only matching properties will be mapped)
-var query = dlinq.From<Person>().OrderBy(x => x.Age).Skip(2).Take(5).ToSqlQuery();
+var query = dlinq.From<Person>().OrderBy(x => x.Age).Skip(2).Take(5);
 var results = dlinq.Query<Employee>(query).ToList();
 
 // Query Person and project to Employee specifying projection with 'Select' 
