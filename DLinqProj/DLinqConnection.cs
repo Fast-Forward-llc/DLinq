@@ -40,7 +40,7 @@ namespace DLinq
             return _dapper.Query<T>(sqlQuery.Sql, sqlQuery.Parameters, GetCurrentTransaction()!);
         }
 
-        public virtual IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery)
+        public virtual IEnumerable<T> Query<T>(SqlQuery sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
 #if DEBUG_SQL
@@ -59,7 +59,7 @@ namespace DLinq
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
-        public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery)
+        public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
             #if DEBUG_SQL

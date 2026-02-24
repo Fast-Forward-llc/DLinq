@@ -307,6 +307,28 @@ namespace DLinqTests
                 , sql);
         }
 
+        [TestMethod]
+        public void Where_Contains()
+        {
+            var ids = new[] { Guid.Parse("0E3A8BCA-B633-430F-973F-A2DF9308E475"), Guid.Parse("5D79478E-1551-48FC-86E8-82E121015D6E"), Guid.Parse("EE6C6537-42DC-41B0-A192-BA54FB489038") };
+            var provider = GetProvider();
+            var query = new SqlQuery<OrderUUID>(provider).Where(x => ids.Contains(x.Id));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [OrderUUID] AS [t1]\r\nWHERE [t1].[Id] IN ('0e3a8bca-b633-430f-973f-a2df9308e475', '5d79478e-1551-48fc-86e8-82e121015d6e', 'ee6c6537-42dc-41b0-a192-ba54fb489038')", sql);
+        }
+
+        [TestMethod]
+        public void Where_NotContains()
+        {
+            var ids = new[] { "A", "B", "C" };
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => !ids.Contains(x.Name));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] NOT IN ('A', 'B', 'C')", sql);
+        }
+
         [Table("DummyTable")]
         private class TestEntity
         {
@@ -366,6 +388,6 @@ namespace DLinqTests
             public OrderCustomer oc { get; set; }
             public Product p { get; set; }
         }
-
+        private class OrderUUID { public Guid Id { get; set; } }
     }
 }

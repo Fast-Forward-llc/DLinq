@@ -108,6 +108,26 @@ namespace DLinq
             if (expr is ConstantExpression c)
                 return c.Value;
 
+            // Handle MethodCallExpression for conversion operators (e.g., op_Implicit) 
+            // These cannot be invoked via DynamicInvoke, so we extract the underlying value
+            if (expr is MethodCallExpression methodCall)
+            {
+                // Check if this is a conversion operator (op_Implicit, op_Explicit, etc.)
+                if (methodCall.Method.IsSpecialName && 
+                    (methodCall.Method.Name.StartsWith("op_") || methodCall.Method.Name == "ToArray"))
+                {
+                    // Try to extract from the first argument
+                    if (methodCall.Arguments.Count > 0)
+                    {
+                        var argValue = GetValueFromExpression(methodCall.Arguments[0], entityParamNames);
+                        // If the method is a conversion, we might need to apply it manually
+                        // For op_Implicit/op_Explicit on arrays/collections, often just the underlying value works
+                        if (argValue != null)
+                            return argValue;
+                    }
+                }
+            }
+
             var lambda = Expression.Lambda(expr);
             var compiled = lambda.Compile();
             return compiled.DynamicInvoke();
@@ -514,15 +534,7 @@ namespace DLinq
                     if (isConstant)
                     {
                         // Emit literals directly
-                        paramNames = valuesList.Select(v =>
-                        {
-                            if (v == null) return "NULL";
-                            if (v is string s) return $"'{s.Replace("'", "''")}'";
-                            if (v is bool b) return b ? "1" : "0";
-                            if (v is DateTime dt) return $"'{dt:yyyy-MM-ddTHH:mm:ss.fffffff}'";
-                            if (v is Enum) return Convert.ToInt32(v).ToString();
-                            return Convert.ToString(v, CultureInfo.InvariantCulture);
-                        }).ToList();
+                        paramNames = valuesList.Select(v =>context.dialect.FormatValue(v)).ToList();
                     }
                     else
                     {

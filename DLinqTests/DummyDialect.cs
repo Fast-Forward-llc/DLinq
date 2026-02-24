@@ -13,6 +13,7 @@ namespace DLinqTests
         public string FormatTable(string tableName, string? alias) => string.IsNullOrEmpty(alias) ? tableName : $"{tableName} AS {alias}";
         public string FormatIdentifier(string identifier) => $"\"{identifier}\"";
         public string FormatColumn(string columnName, string? tableName = null, bool isLiteralValue = false) => isLiteralValue ? columnName : $"\"{columnName}\"";
+        public string FormatValue(object? value) => value?.ToString();
         public string ParameterPlaceholder(int index) => "@p" + index;
         public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
         public string DeleteStatement(string tableName, object whereValues)

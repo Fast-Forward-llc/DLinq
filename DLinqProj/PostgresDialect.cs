@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Dynamic;
+using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
@@ -61,13 +62,19 @@ namespace DLinq
             return $"@{paramName}";
         }
 
-        public static string FormatValue(object? value)
+        public string FormatValue(object? value)
         {
-            if (value is null) return "NULL";
+            if (value == null) return "NULL";
             if (value is string s) return $"'{s.Replace("'", "''")}'";
-            if (value is DateTime dt) return $"'{dt:yyyy-MM-dd HH:mm:ss.fff}'";
-            if (value is bool b) return b ? "TRUE" : "FALSE";
-            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL";
+            if (value is bool b) return b ? "1" : "0";
+            if (value is DateTime dt) return $"'{dt:yyyy-MM-ddTHH:mm:ss.fffffff}'";
+            if (value is Guid g) return $"'{g}'";
+            if (value is Enum) return Convert.ToInt32(value).ToString();
+            // Check if it's a numeric type (int, long, decimal, double, etc.)
+            var typeCode = Type.GetTypeCode(value.GetType());
+            if (typeCode >= TypeCode.SByte && typeCode <= TypeCode.Decimal)
+                return Convert.ToString(value, CultureInfo.InvariantCulture) ?? "NULL";
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? "NULL";
         }
 
         public string FormatColumn(string columnName, string? tableAlias = null, bool isLiteralValue = false)

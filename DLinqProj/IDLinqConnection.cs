@@ -32,10 +32,11 @@ namespace DLinq
         Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null);
         void Open();
         SqlQuery<T> QueryBuilder<T>();
+        IEnumerable<T> Query<T>(SqlTextExpression sqlQuery);
         IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate);
-        IEnumerable<T> Query<T>(SqlQuery<T> sqlQuery);
+        IEnumerable<T> Query<T>(SqlQuery sqlQuery);
         Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate);
-        Task<IEnumerable<T>> QueryAsync<T>(SqlQuery<T> sqlQuery);
+        Task<IEnumerable<T>> QueryAsync<T>(SqlQuery sqlQuery);
         void Rollback();
         SqlQuery<T> From<T>();
         T? Update<T>(T entity, UpdateOptions? options = null);
