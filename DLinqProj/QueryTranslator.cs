@@ -318,9 +318,10 @@ namespace DLinq
                     if (enumType != null && parameters.Count > 0 && enumType.IsDefined(typeof(CharEnumAttribute), false))
                     {
                         var lastParam = parameters[parameters.Count - 1];
-                        if (lastParam != null && lastParam is int intValue)
+                        if (lastParam != null && (lastParam is int || lastParam.GetType().IsEnum))
                         {
-                            // Convert int to char for enums marked with [CharEnum]
+                            // Convert int or enum to char for enums marked with [CharEnum]
+                            int intValue = lastParam is int i ? i : Convert.ToInt32(lastParam);
                             parameters[parameters.Count - 1] = (char)intValue;
                         }
                     }
@@ -533,7 +534,12 @@ namespace DLinq
                 }
 
                 // Convert constant value to char if this is a char enum (marked with [CharEnum] attribute)
-                if (enumType != null && constantValue != null && constantValue is int intValue && 
+                if (enumType != null && constantValue != null && constantValue.GetType().IsEnum && 
+                    enumType.IsDefined(typeof(CharEnumAttribute), false))
+                {
+                    constantValue = (char)Convert.ToInt32(constantValue);
+                }
+                else if (enumType != null && constantValue != null && constantValue is int intValue && 
                     enumType.IsDefined(typeof(CharEnumAttribute), false))
                 {
                     constantValue = (char)intValue;

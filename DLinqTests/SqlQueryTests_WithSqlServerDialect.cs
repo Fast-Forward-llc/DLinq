@@ -320,6 +320,21 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_CharEnum_Parameter2()
+        {
+            var ot = OrderTypeCode.Standard;
+            var provider = GetProvider();
+            //OrderTypeCode should be translated to its underlying char value in the generated SQL and parameters
+            var query = new SqlQuery<OrderUUID>(provider).Where(x => x.TypeCode == ot);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [OrderUUID] AS [t1]\r\nWHERE [t1].[TypeCode] = @p0", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            //verify that the parameter value is the char 'S' corresponding to OrderTypeCode.Standard
+            Assert.AreEqual('S', ((IDictionary<string, object>)parameters)["p0"]);
+        }
+
+        [TestMethod]
         public void Where_IntEnum_Parameter()
         {
             var provider = GetProvider();
