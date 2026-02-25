@@ -1,13 +1,7 @@
-using Azure;
 using DLinq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Dynamic;
-using System.Linq;
-using System.Linq.Expressions;
 using System.Text.Json;
 
 namespace DLinqTests
@@ -41,6 +35,10 @@ namespace DLinqTests
         {
         }
 
+        [TestInitialize]
+        public void TestInitialize() {
+        }
+
         [TestMethod]
         public void Select_All()
         {
@@ -48,7 +46,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM [Person] AS [t1]",sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]", sql);
         }
 
         [TestMethod]
@@ -67,7 +65,7 @@ namespace DLinqTests
         public void Select_All_Projection()
         {
             var provider = GetProvider();
-            var query = new SqlQuery<Person>(provider).Select(p => new {p.Name, p.Age, DepartmentId = 7});
+            var query = new SqlQuery<Person>(provider).Select(p => new { p.Name, p.Age, DepartmentId = 7 });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual("SELECT [t1].[Name] AS [Name], [t1].[Age] AS [Age], @p0 AS [DepartmentId] FROM [Person] AS [t1]", sql);
@@ -95,7 +93,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider).Where(x => x.Age > minAge && x.Name != null && x.Age < maxAge);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE (([t1].[Age] > @p0) AND ([t1].[Name] IS NOT NULL)) AND ([t1].[Age] < @p1)",sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE (([t1].[Age] > @p0) AND ([t1].[Name] IS NOT NULL)) AND ([t1].[Age] < @p1)", sql);
             Assert.AreEqual(2, ((IDictionary<string, object>)parameters).Count);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -234,8 +232,8 @@ namespace DLinqTests
             Console.WriteLine(sql);
             Assert.AreEqual(
                 "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
-                +" INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
-                ,sql);
+                + " INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
+                , sql);
         }
 
         [TestMethod]
@@ -252,7 +250,7 @@ namespace DLinqTests
                 "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1] "
                 + "INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)\r\n"
                 + "WHERE [t1].[Age] > @p0"
-                ,sql);
+                , sql);
             Assert.IsTrue(sql.Contains("ON"));
             Assert.IsTrue(sql.Contains("AND"));
         }
@@ -266,7 +264,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
                 .Where(p => p.Age > 18)
-                .Select<Pet>((p) => new { Name = p.Name, Breed="Poodle", Age = petAge, DOB = DateTime.Now });
+                .Select<Pet>((p) => new { Name = p.Name, Breed = "Poodle", Age = petAge, DOB = DateTime.Now });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
             Assert.AreEqual(
@@ -296,7 +294,7 @@ namespace DLinqTests
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-                .Where<Pet>((p,pt) => p.Age > 18 && pt.Name != null)
+                .Where<Pet>((p, pt) => p.Age > 18 && pt.Name != null)
                 .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
@@ -305,6 +303,35 @@ namespace DLinqTests
                 + "INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]\r\n"
                 + "WHERE ([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)"
                 , sql);
+        }
+
+        [TestMethod]
+        public void Where_CharEnum_Parameter()
+        {
+            var provider = GetProvider();
+            //OrderTypeCode should be translated to its underlying char value in the generated SQL and parameters
+            var query = new SqlQuery<OrderUUID>(provider).Where(x => x.TypeCode == OrderTypeCode.Standard);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [OrderUUID] AS [t1]\r\nWHERE [t1].[TypeCode] = @p0", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            //verify that the parameter value is the char 'S' corresponding to OrderTypeCode.Standard
+            Assert.AreEqual('S', ((IDictionary<string, object>)parameters)["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_IntEnum_Parameter()
+        {
+            var provider = GetProvider();
+            // Regular enums without [CharEnum] should remain as integers
+            var query = new SqlQuery<ProductWithStatus>(provider).Where(x => x.Status == ProductStatus.Active);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [ProductWithStatus] AS [t1]\r\nWHERE [t1].[Status] = @p0", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            // Verify that the parameter value is the int 1, not char
+            Assert.AreEqual(1, ((IDictionary<string, object>)parameters)["p0"]);
+            Assert.IsInstanceOfType(((IDictionary<string, object>)parameters)["p0"], typeof(int));
         }
 
         [TestMethod]
@@ -356,7 +383,7 @@ namespace DLinqTests
             public string DepartmentName { get; set; }
         }
 
-        
+
         private class Order
         {
             public int Id { get; set; }
@@ -388,6 +415,32 @@ namespace DLinqTests
             public OrderCustomer oc { get; set; }
             public Product p { get; set; }
         }
-        private class OrderUUID { public Guid Id { get; set; } }
+        private class OrderUUID
+        {
+            public Guid Id { get; set; }
+            public OrderTypeCode TypeCode { get; set; }
+        }
+
+        [CharEnum]
+        private enum OrderTypeCode
+        {
+            Standard = 'S',
+            Express = 'E',
+            International = 'I'
+        }
+
+        // Regular enum without [CharEnum] attribute - should remain as int
+        private enum ProductStatus
+        {
+            Inactive = 0,
+            Active = 1,
+            Discontinued = 2
+        }
+
+        private class ProductWithStatus
+        {
+            public int Id { get; set; }
+            public ProductStatus Status { get; set; }
+        }
     }
 }

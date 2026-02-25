@@ -296,10 +296,37 @@ namespace DLinq
                             return $"{colSql} IS NOT NULL";
                         throw new NotSupportedException("Null comparison only supported for == and !=");
                     }
+
+                    // Check if either side is a Convert from enum to int (for char enum handling)
+                    Type enumType = null;
+                    if (binary.Left is UnaryExpression leftUnary && leftUnary.NodeType == ExpressionType.Convert && 
+                        leftUnary.Operand.Type.IsEnum)
+                    {
+                        enumType = leftUnary.Operand.Type;
+                    }
+                    else if (binary.Right is UnaryExpression rightUnary && rightUnary.NodeType == ExpressionType.Convert && 
+                        rightUnary.Operand.Type.IsEnum)
+                    {
+                        enumType = rightUnary.Operand.Type;
+                    }
+
                     var left = ParsePredicateWithEntityParams(binary.Left, parameters, context, entityParamNames);
                     var right = ParsePredicateWithEntityParams(binary.Right, parameters, context, entityParamNames);
+
+                    // Convert the last parameter if it was a constant from a char enum comparison
+                    // Check if the enum has the [CharEnum] attribute indicating it should be treated as char
+                    if (enumType != null && parameters.Count > 0 && enumType.IsDefined(typeof(CharEnumAttribute), false))
+                    {
+                        var lastParam = parameters[parameters.Count - 1];
+                        if (lastParam != null && lastParam is int intValue)
+                        {
+                            // Convert int to char for enums marked with [CharEnum]
+                            parameters[parameters.Count - 1] = (char)intValue;
+                        }
+                    }
+
                     string op = context.dialect.MapExpressionTypeToSqlOperator(binary.NodeType);
-                    
+
                     if (op == "AND" || op == "OR")
                         return $"({left}) {op} ({right})";
                     return $"{left} {op} {right}";
@@ -453,19 +480,39 @@ namespace DLinq
             }
 
 
+
             MemberExpression member = null;
             object constantValue = null;
             bool constantAvailable = false;
 
-            if (binary.Left is MemberExpression lhsMember)
+            // Unwrap Convert nodes to handle enum comparisons (e.g., Convert(x.EnumProp, Int32) == 83)
+            Expression leftExpr = binary.Left;
+            Expression rightExpr = binary.Right;
+            Type enumType = null;
+
+            if (leftExpr is UnaryExpression leftUnary && leftUnary.NodeType == ExpressionType.Convert && 
+                leftUnary.Operand is MemberExpression && leftUnary.Operand.Type.IsEnum)
+            {
+                enumType = leftUnary.Operand.Type;
+                leftExpr = leftUnary.Operand;
+            }
+
+            if (rightExpr is UnaryExpression rightUnary && rightUnary.NodeType == ExpressionType.Convert && 
+                rightUnary.Operand is MemberExpression && rightUnary.Operand.Type.IsEnum)
+            {
+                enumType = rightUnary.Operand.Type;
+                rightExpr = rightUnary.Operand;
+            }
+
+            if (leftExpr is MemberExpression lhsMember)
             {
                 member = lhsMember;
-                constantAvailable = TryGetValueFromExpression(binary.Right, out constantValue);
+                constantAvailable = TryGetValueFromExpression(rightExpr, out constantValue);
             }
-            else if (binary.Right is MemberExpression rhsMember)
+            else if (rightExpr is MemberExpression rhsMember)
             {
                 member = rhsMember;
-                constantAvailable = TryGetValueFromExpression(binary.Left, out constantValue);
+                constantAvailable = TryGetValueFromExpression(leftExpr, out constantValue);
             }
 
             if (member != null && constantAvailable)
@@ -484,6 +531,14 @@ namespace DLinq
                         _ => throw new NotSupportedException("Unsupported null comparison.")
                     };
                 }
+
+                // Convert constant value to char if this is a char enum (marked with [CharEnum] attribute)
+                if (enumType != null && constantValue != null && constantValue is int intValue && 
+                    enumType.IsDefined(typeof(CharEnumAttribute), false))
+                {
+                    constantValue = (char)intValue;
+                }
+
                 string sqlOp = binary.NodeType switch
                 {
                     ExpressionType.Equal => "=",
