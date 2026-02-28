@@ -361,6 +361,17 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_Contains_WithTypeCast()
+        {
+            var ids = new[] { Guid.Parse("0E3A8BCA-B633-430F-973F-A2DF9308E475"), Guid.Parse("5D79478E-1551-48FC-86E8-82E121015D6E"), Guid.Parse("EE6C6537-42DC-41B0-A192-BA54FB489038") };
+            var provider = GetProvider();
+            var query = new SqlQuery<OrderUUIDNullable>(provider).Where(x => ids.Contains((Guid)x.Id!));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [OrderUUIDNullable] AS [t1]\r\nWHERE [t1].[Id] IN ('0e3a8bca-b633-430f-973f-a2df9308e475', '5d79478e-1551-48fc-86e8-82e121015d6e', 'ee6c6537-42dc-41b0-a192-ba54fb489038')", sql);
+        }
+
+        [TestMethod]
         public void Where_NotContains()
         {
             var ids = new[] { "A", "B", "C" };
@@ -369,6 +380,104 @@ namespace DLinqTests
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] NOT IN ('A', 'B', 'C')", sql);
+        }
+
+        [TestMethod]
+        public void Where_StartsWith()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.StartsWith("John"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_StartsWith_WithParameter()
+        {
+            var prefix = "John";
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.StartsWith(prefix));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_EndsWith()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.EndsWith("son"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%son", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_StringContains()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.Contains("oh"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%oh%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_NotStartsWith()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => !x.Name.StartsWith("Test"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE NOT ([t1].[Name] LIKE @p0)", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Test%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_NotEndsWith()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => !x.Name.EndsWith("ing"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE NOT ([t1].[Name] LIKE @p0)", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%ing", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_NotStringContains()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => !x.Name.Contains("xyz"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE NOT ([t1].[Name] LIKE @p0)", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%xyz%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_StartsWith_Combined()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.StartsWith("John") && x.Age > 18);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE ([t1].[Name] LIKE @p0) AND ([t1].[Age] > @p1)", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John%", paramDict["p0"]);
+            Assert.AreEqual(18, paramDict["p1"]);
         }
 
         [Table("DummyTable")]
@@ -433,6 +542,11 @@ namespace DLinqTests
         private class OrderUUID
         {
             public Guid Id { get; set; }
+            public OrderTypeCode TypeCode { get; set; }
+        }
+        private class OrderUUIDNullable
+        {
+            public Guid? Id { get; set; }
             public OrderTypeCode TypeCode { get; set; }
         }
 

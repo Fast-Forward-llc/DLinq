@@ -144,6 +144,42 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_StartsWith()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.StartsWith("John"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Name\" LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_EndsWith()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.EndsWith("son"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Name\" LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%son", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_StringContains()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Name.Contains("oh"));
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Name\" LIKE @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%oh%", paramDict["p0"]);
+        }
+
+        [TestMethod]
         public void OrderBy()
         {
             var provider = GetProvider();

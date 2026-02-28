@@ -371,9 +371,23 @@ namespace DLinq
                 case UnaryExpression unary when unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked:
                     return ParsePredicateWithEntityParams(unary.Operand, parameters, context, entityParamNames);
                 case MethodCallExpression methodCall when methodCall.Method.Name == "Contains":
+                    // Check if it's a string.Contains or collection.Contains
+                    if (methodCall.Method.DeclaringType == typeof(string))
+                        return ParseStringMethodPredicate(methodCall, "Contains", parameters, context, entityParamNames);
                     return ParseContainsPredicate(methodCall, parameters, context, entityParamNames);
+                case MethodCallExpression methodCall when methodCall.Method.Name == "StartsWith":
+                    return ParseStringMethodPredicate(methodCall, "StartsWith", parameters, context, entityParamNames);
+                case MethodCallExpression methodCall when methodCall.Method.Name == "EndsWith":
+                    return ParseStringMethodPredicate(methodCall, "EndsWith", parameters, context, entityParamNames);
                 case UnaryExpression unary when unary.NodeType == ExpressionType.Not && unary.Operand is MethodCallExpression mce && mce.Method.Name == "Contains":
-                    return ParseNotContainsPredicate((MethodCallExpression)unary.Operand, parameters, context, entityParamNames);
+                    // Check if it's a string.Contains or collection.Contains
+                    if (mce.Method.DeclaringType == typeof(string))
+                        return $"NOT ({ParseStringMethodPredicate(mce, "Contains", parameters, context, entityParamNames)})";
+                    return ParseNotContainsPredicate(mce, parameters, context, entityParamNames);
+                case UnaryExpression unary when unary.NodeType == ExpressionType.Not && unary.Operand is MethodCallExpression mce2 && mce2.Method.Name == "StartsWith":
+                    return $"NOT ({ParseStringMethodPredicate(mce2, "StartsWith", parameters, context, entityParamNames)})";
+                case UnaryExpression unary when unary.NodeType == ExpressionType.Not && unary.Operand is MethodCallExpression mce3 && mce3.Method.Name == "EndsWith":
+                    return $"NOT ({ParseStringMethodPredicate(mce3, "EndsWith", parameters, context, entityParamNames)})";
                 case InvocationExpression invocation:
                     // Fallback to old logic for invocation
                     throw new NotSupportedException("Invocation expressions in predicates are not supported in this mode.");
@@ -572,13 +586,21 @@ namespace DLinq
             if (containsCall.Object != null)
             {
                 valuesExpr = containsCall.Object;
-                if (containsCall.Arguments[0] is MemberExpression m)
+                var arg = containsCall.Arguments[0];
+                // Unwrap Convert/ConvertChecked expressions (e.g., (Guid)x.Id)
+                if (arg is UnaryExpression unary && (unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked))
+                    arg = unary.Operand;
+                if (arg is MemberExpression m)
                     member = m;
             }
             else if (containsCall.Arguments.Count == 2)
             {
                 valuesExpr = containsCall.Arguments[0];
-                if (containsCall.Arguments[1] is MemberExpression m)
+                var arg = containsCall.Arguments[1];
+                // Unwrap Convert/ConvertChecked expressions (e.g., (Guid)x.Id)
+                if (arg is UnaryExpression unary && (unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked))
+                    arg = unary.Operand;
+                if (arg is MemberExpression m)
                     member = m;
             }
 
@@ -624,6 +646,40 @@ namespace DLinq
             string tableAlias = GetAliasForEntity(colEntityType, context);
             return $"{context.dialect.FormatColumn(colName, tableAlias)} NOT IN ({string.Join(", ", paramNames)})";
 
+        }
+
+        private static string ParseStringMethodPredicate(MethodCallExpression methodCall, string methodName, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
+        {
+            // Handles: x.Name.StartsWith("value"), x.Name.EndsWith("value"), x.Name.Contains("value")
+            if (methodCall.Object is MemberExpression member && IsEntityMember(member, entityParamNames) && methodCall.Arguments.Count == 1)
+            {
+                var (colName, _, colEntityType) = GetColumnInfo(member, context);
+                string tableAlias = GetAliasForEntity(colEntityType, context);
+                string columnSql = context.dialect.FormatColumn(colName, tableAlias);
+
+                // Get the pattern value
+                var patternExpr = methodCall.Arguments[0];
+                object patternValue = GetValueFromExpression(patternExpr, entityParamNames);
+
+                if (patternValue is string pattern)
+                {
+                    // Build the LIKE pattern based on the method
+                    string likePattern = methodName switch
+                    {
+                        "StartsWith" => pattern + "%",
+                        "EndsWith" => "%" + pattern,
+                        "Contains" => "%" + pattern + "%",
+                        _ => throw new NotSupportedException($"Unsupported string method: {methodName}")
+                    };
+
+                    parameters.Add(likePattern);
+                    return $"{columnSql} LIKE {context.dialect.ParameterPlaceholder(parameters.Count - 1)}";
+                }
+
+                throw new NotSupportedException($"String {methodName} requires a string argument.");
+            }
+
+            throw new NotSupportedException($"Unsupported {methodName} predicate.");
         }
 
         public class TranslateContext
