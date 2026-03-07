@@ -333,6 +333,62 @@ namespace DLinq
             return this;
         }
 
-        
+        public SqlQuery<T> LeftJoin<TLeft, TRight>(
+            Expression<Func<TLeft, TRight, bool>> onPredicate)
+        {
+            if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
+
+            this.selectNode.Joins.Add(
+                new SqlJoin<TLeft, TRight>()
+                {
+                    JoinType = "LEFT",
+                    onPredicate = onPredicate
+                }
+                );
+            return this;
+        }
+        public SqlQuery<T> LeftJoin<TRight>(
+            Expression<Func<T, TRight, bool>> onPredicate)
+        {
+            if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
+
+            this.selectNode.Joins.Add(
+                new SqlJoin<T, TRight>()
+                {
+                    JoinType = "LEFT",
+                    onPredicate = onPredicate
+                }
+                );
+            return this;
+        }
+
+        public SqlQuery<T> RightJoin<TLeft, TRight>(
+            Expression<Func<TLeft, TRight, bool>> onPredicate)
+        {
+            if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
+
+            this.selectNode.Joins.Add(
+                new SqlJoin<TLeft, TRight>()
+                {
+                    JoinType = "RIGHT",
+                    onPredicate = onPredicate
+                }
+                );
+            return this;
+        }
+        public SqlQuery<T> RightJoin<TRight>(
+            Expression<Func<T, TRight, bool>> onPredicate)
+        {
+            if (onPredicate == null) throw new ArgumentNullException(nameof(onPredicate));
+
+            this.selectNode.Joins.Add(
+                new SqlJoin<T, TRight>()
+                {
+                    JoinType = "RIGHT",
+                    onPredicate = onPredicate
+                }
+                );
+            return this;
+        }
     }
 }

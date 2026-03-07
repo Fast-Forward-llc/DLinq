@@ -237,6 +237,36 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void LeftJoin()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .LeftJoin<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
+                + " LEFT JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
+                , sql);
+        }
+
+        [TestMethod]
+        public void RightJoin()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .RightJoin<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
+                + " RIGHT JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
+                , sql);
+        }
+
+        [TestMethod]
         public void Join_WithMultipleConditions()
         {
             var provider = GetProvider();
