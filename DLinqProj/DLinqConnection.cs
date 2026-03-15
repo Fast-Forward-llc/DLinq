@@ -528,7 +528,7 @@ namespace DLinq
         {
             Open();
             if (_conn == null) throw new InvalidOperationException("Cannot begin transaction of a null connection. It may have been disposed.");
-            _transaction = new Transaction(_conn.BeginTransaction(), Commit, Rollback, TransDispose);
+            if (_transaction == null) _transaction = new Transaction(_conn.BeginTransaction(), Commit, Rollback, TransDispose);
             _transactionDepth++;
             return _transaction;
         }
@@ -538,7 +538,7 @@ namespace DLinq
         {
             Open();
             if (_conn == null) throw new InvalidOperationException("Cannot begin transaction of a null connection. It may have been disposed.");
-            _transaction = new Transaction(_conn.BeginTransaction(il), Commit, Rollback, TransDispose);
+            if (_transaction == null) _transaction = new Transaction(_conn.BeginTransaction(il), Commit, Rollback, TransDispose);
             _transactionDepth++;
             return _transaction;
         }

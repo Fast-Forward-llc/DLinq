@@ -1,4 +1,5 @@
 using DLinq;
+using Microsoft.VisualStudio.TestPlatform.Utilities;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Dynamic;
@@ -13,6 +14,8 @@ namespace DLinqTests
 
         private class Person
         {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
             public int Id { get; set; }
             public string Name { get; set; }
             public int Age { get; set; }
@@ -20,6 +23,8 @@ namespace DLinqTests
 
         private class Pet
         {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
             public int Id { get; set; }
             public int OwnerId { get; set; }
             public string Name { get; set; }
@@ -209,6 +214,22 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void ToUpdateSql_GeneratesFullSql_WithSelect()
+        {
+            var query = new SqlQuery<TestEntity>(GetProvider());
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" },new UpdateOptions() { SelectAfterMutation = true });
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "UPDATE [DummyTable]");
+            StringAssert.Contains(sql, "SET [Name] = @Name");
+            StringAssert.Contains(sql, "OUTPUT inserted.*");
+            StringAssert.Contains(sql, "WHERE [Id] = @Id");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
         public void ToDeleteSql_GeneratesFullSql_WithPredicate()
         {
             var query = new SqlQuery<TestEntity>(GetProvider());
@@ -232,6 +253,21 @@ namespace DLinqTests
             Console.WriteLine(sql);
             Assert.AreEqual(
                 "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
+                + " INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
+                , sql);
+        }
+
+        [TestMethod]
+        public void JoinAndProject()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Select<Person, Pet>((p, pt) => new { Id = p.Id, OId = pt.Id, PersonName = p.Name, PetName = pt.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Id] AS [Id], [t2].[Id] AS [OId], [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1]"
                 + " INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]"
                 , sql);
         }
