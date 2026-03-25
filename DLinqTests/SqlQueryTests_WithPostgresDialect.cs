@@ -252,10 +252,75 @@ namespace DLinqTests
             Console.WriteLine(sql);
             StringAssert.Contains(sql, "UPDATE \"DummyTable\"");
             StringAssert.Contains(sql, "SET \"Name\" = @Name");
-            StringAssert.Contains(sql, "WHERE \"Id\" = @Id");
+            StringAssert.Contains(sql, "WHERE \"Id\" = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_WithConstantPredicate()
+        {
+            var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" }, x => x.Id == 1);
+            Console.WriteLine(sql);
+            StringAssert.Contains(sql, "UPDATE \"DummyTable\"");
+            StringAssert.Contains(sql, "SET \"Name\" = @Name");
+            StringAssert.Contains(sql, "WHERE \"Id\" = @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_WithVariablePredicate()
+        {
+            var idValue = 1;
+            var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" }, x => x.Id == idValue);
+            Console.WriteLine(sql);
+            StringAssert.Contains(sql, "UPDATE \"DummyTable\"");
+            StringAssert.Contains(sql, "SET \"Name\" = @Name");
+            StringAssert.Contains(sql, "WHERE \"Id\" = @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_WithMemberPredicate()
+        {
+            var idValue = 1;
+            var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" }, x => x.Id == idValue && x.Age > 0);
+            Console.WriteLine(sql);
+            StringAssert.Contains(sql, "UPDATE \"DummyTable\"");
+            StringAssert.Contains(sql, "SET \"Name\" = @Name");
+            StringAssert.Contains(sql, "\"Id\" = @p0");
+            StringAssert.Contains(sql, "\"Age\" > @p1");
+            StringAssert.Contains(sql, "AND");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual(0, paramDict["@p1"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_WithComplexPredicate()
+        {
+            var idValues = new[] { 1, 2, 3 };
+            var query = new SqlQuery<TestEntity>(new QueryProvider(new PostgresDialect()));
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" }, x => idValues.Contains(x.Id));
+            Console.WriteLine(sql);
+            StringAssert.Contains(sql, "UPDATE \"DummyTable\"");
+            StringAssert.Contains(sql, "SET \"Name\" = @Name");
+            StringAssert.Contains(sql, "IN (1, 2, 3)");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual("abc", paramDict["@Name"]);
         }
 
@@ -385,6 +450,7 @@ namespace DLinqTests
             [Key]
             public int Id { get; set; }
             public string Name { get; set; }
+            public int Age { get; set; }
         }
 
 

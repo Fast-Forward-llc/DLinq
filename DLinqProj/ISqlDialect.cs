@@ -10,10 +10,12 @@ namespace DLinq
         string FormatColumn(string columnName, string? tableAlias = null, bool isLiteralValue = false);
         string FormatIdentifier(string identifier);
         string FormatValue(object? value);
+        string FormatParameter(string paramName);
         string ParameterPlaceholder(int index);
         string SelectStatement(SqlSelectNode ast, List<object> parameters);
         string InsertStatement(string tableName, List<string> columns, List<string> paramNames, InsertOptions options);
         string UpdateStatement(string tableName, object setValues, object whereValues, UpdateOptions options, List<(string colName, object value)> primaryKeys);
+        string UpdateStatement(string tableName, Dictionary<string, string> setClause, string? whereClause, UpdateOptions options);
         string DeleteStatement(string tableName, object whereValues);
         string WhereClauseFromFragments(IEnumerable<string> clauseFragments, string logicalOperator = "AND");
         string IdentityValueExpression(string tableName, string columnName);

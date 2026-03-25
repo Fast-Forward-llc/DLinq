@@ -112,7 +112,7 @@ namespace DLinq
         {
             if (Provider is QueryProvider qp)
             {
-                return qp.Translator.GenerateUpdateSql(entity, wherePredicate?.Body, options);
+                return qp.Translator.GenerateUpdateSql(entity, wherePredicate, options);
             }
             throw new NotSupportedException("ToUpdateSql is only supported for SqlQuery using QueryProvider.");
         }

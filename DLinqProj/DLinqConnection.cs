@@ -13,7 +13,7 @@ using System.Text.Json;
 
 namespace DLinq
 {
-    public class DLinqConnection : IDbConnection, IDisposable, IDLinqConnection
+    public class DLinqConnection : IDisposable, IDLinqConnection
     {
         private IDbConnection? _conn;
         private readonly QueryProvider _provider;

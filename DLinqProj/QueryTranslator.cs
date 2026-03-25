@@ -834,7 +834,7 @@ namespace DLinq
                     keyInfo.Add((colName, prop.GetValue(entity), isIdentity));
                 if (dbGenAttr != null && (dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Identity || dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Computed))
                     continue;
-                var paramName = "@" + colName;
+                var paramName = _dialect.FormatParameter(colName);
                 columns.Add(colName);
                 paramNames.Add(paramName);
                 paramDict[paramName] = prop.GetValue(entity);
@@ -850,7 +850,7 @@ namespace DLinq
             var whereParts = keyInfo.Select(key =>
                 key.isIdentity
                     ? $"{_dialect.FormatColumn(key.colName)} = {_dialect.IdentityValueExpression(tableName, key.colName)}"
-                    : $"{_dialect.FormatColumn(key.colName)} = @{key.colName}"
+                    : $"{_dialect.FormatColumn(key.colName)} = {_dialect.FormatParameter(key.colName)}"
             );
             return string.Join(" AND ", whereParts);
         }
@@ -858,7 +858,7 @@ namespace DLinq
         /// <summary>
         /// Generates an UPDATE SQL statement for the given entity object.
         /// Skips properties marked as NotMapped or Computed.
-        /// Uses primary key(s) for WHERE clause.
+        /// Uses primary key(s) for WHERE clause with positional parameters (@p0, @p1, etc.).
         /// </summary>
         /// <param name="entity">Entity object to update.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
@@ -867,12 +867,12 @@ namespace DLinq
         {
             options ??= new UpdateOptions();
             var entityType = entity.GetType();
-            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? GetEntityTableName(entityType);
             var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var setDict = new Dictionary<string, object>();
-            var whereDict = new Dictionary<string, object>();
             var primaryKeys = new List<(string colName, object value)>();
+            var whereParams = new List<object>();
+
             foreach (var prop in properties)
             {
                 if (prop.GetCustomAttribute<NotMappedAttribute>() != null)
@@ -885,22 +885,48 @@ namespace DLinq
                 var value = prop.GetValue(entity);
                 if (prop.GetCustomAttribute<KeyAttribute>() != null)
                 {
-                    whereDict[colName] = value;
                     primaryKeys.Add((colName, value));
+                    whereParams.Add(value);
                 }
                 else
                 {
                     setDict[colName] = value;
                 }
             }
-            var sql = _dialect.UpdateStatement(tableName, setDict, whereDict, options, primaryKeys);
-            var parameters = ToAnonymousObject(setDict.Concat(whereDict).ToDictionary(kvp => "@" + kvp.Key, kvp => kvp.Value));
-            return (sql, parameters);
+
+            // Build SET clause with column -> parameter mapping
+            var setClause = setDict.ToDictionary(kvp => kvp.Key, kvp => _dialect.FormatParameter(kvp.Key));
+
+            // Build WHERE clause using positional parameters for consistency with predicate-based updates
+            string? whereClause = null;
+            if (primaryKeys.Count > 0)
+            {
+                var whereClauses = new List<string>();
+                for (int i = 0; i < primaryKeys.Count; i++)
+                {
+                    whereClauses.Add($"{_dialect.FormatColumn(primaryKeys[i].colName)} = {_dialect.ParameterPlaceholder(i)}");
+                }
+                whereClause = string.Join(" AND ", whereClauses);
+            }
+
+            // Use dialect method to build complete SQL (handles OUTPUT/RETURNING placement)
+            var sql = _dialect.UpdateStatement(tableName, setClause, whereClause, options);
+
+            // Combine SET parameters and WHERE parameters
+            var allParamsDict = setDict.ToDictionary(kvp => _dialect.FormatParameter(kvp.Key), kvp => kvp.Value);
+            for (int i = 0; i < whereParams.Count; i++)
+            {
+                allParamsDict[_dialect.ParameterPlaceholder(i)] = whereParams[i];
+            }
+
+            var allParams = ToAnonymousObject(allParamsDict);
+            return (sql, allParams);
         }
 
         /// <summary>
         /// Generates an UPDATE SQL statement for the given entity object with a custom WHERE predicate.
         /// Skips properties marked as NotMapped or Computed.
+        /// Supports comprehensive predicate expressions including AND/OR, IN/NOT IN, string methods, and more.
         /// </summary>
         /// <param name="entity">Entity object to update.</param>
         /// <param name="wherePredicate">Custom predicate expression for WHERE clause.</param>
@@ -911,11 +937,11 @@ namespace DLinq
             options ??= new UpdateOptions();
             var context = new TranslateContext { dialect = _dialect };
             var entityType = entity.GetType();
-            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = options.TableName ?? GetEntityTableName(entityType);
             var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var setDict = new Dictionary<string, object>();
             var primaryKeys = new List<(string colName, object value)>();
+
             foreach (var prop in properties)
             {
                 if (prop.GetCustomAttribute<NotMappedAttribute>() != null)
@@ -935,20 +961,35 @@ namespace DLinq
                     setDict[colName] = value;
                 }
             }
-            Dictionary<string, object> whereDict = new();
+
+            // Use ParsePredicate for comprehensive predicate support
             var parameters = new List<object>();
+            var entityParamNames = new HashSet<string>();
+            string? whereSql = null;
+
             if (wherePredicate != null)
             {
-                // Only support simple binary expressions for demo
-                if (wherePredicate is BinaryExpression binary && binary.Left is MemberExpression member && binary.Right is ConstantExpression constant)
-                {
-                    var colName = member.Member.Name;
-                    whereDict[colName] = constant.Value;
-                    parameters.Add(constant.Value);
-                }
+                // Register the entity type alias for column resolution
+                context.TableAliasMap[entityType.FullName!] = tableName;
+
+                // Parse the predicate using the robust ParsePredicate method
+                whereSql = ParsePredicate(wherePredicate, parameters, context, entityParamNames);
             }
-            var sql = _dialect.UpdateStatement(tableName, setDict, whereDict, options, primaryKeys);
-            var allParams = ToAnonymousObject(setDict.Concat(whereDict).ToDictionary(kvp => "@" + kvp.Key, kvp => kvp.Value));
+
+            // Build SET clause with column -> parameter mapping
+            var setClause = setDict.ToDictionary(kvp => kvp.Key, kvp => _dialect.FormatParameter(kvp.Key));
+
+            // Use dialect method to build complete SQL (handles OUTPUT/RETURNING placement)
+            var sql = _dialect.UpdateStatement(tableName, setClause, whereSql, options);
+
+            // Combine SET parameters and WHERE parameters
+            var allParamsDict = setDict.ToDictionary(kvp => _dialect.FormatParameter(kvp.Key), kvp => kvp.Value);
+            for (int i = 0; i < parameters.Count; i++)
+            {
+                allParamsDict[_dialect.ParameterPlaceholder(i)] = parameters[i];
+            }
+
+            var allParams = ToAnonymousObject(allParamsDict);
             return (sql, allParams);
         }
 
@@ -1075,7 +1116,7 @@ namespace DLinq
                     keyInfo.Add((colName, prop.GetValue(entity), isIdentity));
                 if (dbGenAttr != null && (dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Identity || dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Computed))
                     continue;
-                var paramName = "@" + colName;
+                var paramName = _dialect.FormatParameter(colName);
                 columns.Add(colName);
                 paramNames.Add(paramName);
                 paramDict[paramName] = prop.GetValue(entity);

@@ -206,10 +206,25 @@ namespace DLinqTests
             Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
             StringAssert.Contains(sql, "UPDATE [DummyTable]");
             StringAssert.Contains(sql, "SET [Name] = @Name");
-            StringAssert.Contains(sql, "WHERE [Id] = @Id");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_GeneratesFullSql_WithSelectAfterMutation()
+        {
+            var query = new SqlQuery<TestEntity>(GetProvider());
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" },new UpdateOptions() { SelectAfterMutation = true});
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "UPDATE [DummyTable]");
+            StringAssert.Contains(sql, "SET [Name] = @Name");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
             Assert.AreEqual("abc", paramDict["@Name"]);
         }
 
@@ -222,10 +237,10 @@ namespace DLinqTests
             StringAssert.Contains(sql, "UPDATE [DummyTable]");
             StringAssert.Contains(sql, "SET [Name] = @Name");
             StringAssert.Contains(sql, "OUTPUT inserted.*");
-            StringAssert.Contains(sql, "WHERE [Id] = @Id");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
-            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual(1, paramDict["@p0"]);
             Assert.AreEqual("abc", paramDict["@Name"]);
         }
 

@@ -51,7 +51,12 @@ namespace DLinq
             return $"[{EscapeInnerSquareBrackets(identifier)}]";
         }
 
-        public static string FormatParameter(string paramName)
+        public string FormatParameter(string paramName)
+        {
+            return FormatParameterInternal(paramName);
+        }
+
+        private static string FormatParameterInternal(string paramName)
         {
             return $"@{paramName}";
         }
@@ -144,8 +149,8 @@ namespace DLinq
         {
             var setDict = setValues is IDictionary<string, object> dictSet ? dictSet : setValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(setValues));
             var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
-            var setClauses = setDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
-            var whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
+            var setClauses = setDict.Select(kvp => $"{FormatColumn(kvp.Key)} = {FormatParameter(kvp.Key)}");
+            var whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = {FormatParameter(kvp.Key)}");
             var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)}";
             if (options.SelectAfterMutation)
             {
@@ -155,13 +160,34 @@ namespace DLinq
             return sql;
         }
 
+        public string UpdateStatement(string tableName, Dictionary<string, string> setClause, string? whereClause, UpdateOptions options)
+        {
+            // Build SET clause from dictionary (column name -> parameter placeholder)
+            var setClauses = setClause.Select(kvp => $"{FormatColumn(kvp.Key)} = {kvp.Value}");
+            var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)}";
+
+            // SQL Server: OUTPUT comes BEFORE WHERE
+            if (options.SelectAfterMutation)
+            {
+                sql += " OUTPUT inserted.*";
+            }
+
+            // Add WHERE clause if provided
+            if (!string.IsNullOrWhiteSpace(whereClause))
+            {
+                sql += $"\r\nWHERE {whereClause}";
+            }
+
+            return sql;
+        }
+
         public string DeleteStatement(string tableName, object whereValues)
         {
             IEnumerable<string> whereClauses = Enumerable.Empty<string>();
             if (whereValues != null)
             {
                 var whereDict = whereValues is IDictionary<string, object> dictWhere ? dictWhere : whereValues.GetType().GetProperties().ToDictionary(p => p.Name, p => p.GetValue(whereValues));
-                whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = @{kvp.Key}");
+                whereClauses = whereDict.Select(kvp => $"{FormatColumn(kvp.Key)} = {FormatParameter(kvp.Key)}");
             }
             var sql = $"DELETE FROM {FormatTable(tableName)}";
             sql += WhereClauseFromFragments(whereClauses);
@@ -228,7 +254,7 @@ namespace DLinq
                 if (string.Equals(format, "I", StringComparison.OrdinalIgnoreCase))
                     return arg == null ? "" : SqlServerDialect.FormatIdentifierQuoted(arg.ToString());
                 if (string.Equals(format, "P", StringComparison.OrdinalIgnoreCase))
-                    return arg == null ? "" : SqlServerDialect.FormatParameter(arg.ToString());
+                    return arg == null ? "" : SqlServerDialect.FormatParameterInternal(arg.ToString());
 
                 // Fallback
                 return arg is IFormattable f

@@ -12,7 +12,7 @@ namespace DLinqTests
         public void ToSql_ThrowsOnUnsupportedProvider()
         {
             var queryable = new DummyQueryable();
-            Assert.ThrowsException<NotSupportedException>(() => SqlQueryExtensions.ToSql(queryable));
+            Assert.Throws<NotSupportedException>(() => SqlQueryExtensions.ToSql(queryable));
         }
 
         private class DummyQueryable : SqlQuery

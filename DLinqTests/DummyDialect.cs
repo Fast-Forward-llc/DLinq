@@ -14,6 +14,7 @@ namespace DLinqTests
         public string FormatIdentifier(string identifier) => $"\"{identifier}\"";
         public string FormatColumn(string columnName, string? tableName = null, bool isLiteralValue = false) => isLiteralValue ? columnName : $"\"{columnName}\"";
         public string FormatValue(object? value) => value?.ToString();
+        public string FormatParameter(string paramName) => "@" + paramName;
         public string ParameterPlaceholder(int index) => "@p" + index;
         public string SelectStatement(SqlSelectNode ast, List<object> parameters) => "SELECT";
         public string DeleteStatement(string tableName, object whereValues)
@@ -29,6 +30,17 @@ namespace DLinqTests
         public string UpdateStatement(string tableName, object setValues, object whereValues, DLinq.UpdateOptions options, System.Collections.Generic.List<(string colName, object value)> primaryKeys)
         {
             return $"UPDATE {options?.TableName ?? tableName}";
+        }
+
+        public string UpdateStatement(string tableName, Dictionary<string, string> setClause, string? whereClause, DLinq.UpdateOptions options)
+        {
+            var setClauses = setClause.Select(kvp => $"{FormatColumn(kvp.Key)} = {kvp.Value}");
+            var sql = $"UPDATE {FormatTable(tableName)} SET {string.Join(", ", setClauses)}";
+            if (!string.IsNullOrWhiteSpace(whereClause))
+            {
+                sql += $"\r\nWHERE {whereClause}";
+            }
+            return sql;
         }
 
         public string WhereClauseFromFragments(IEnumerable<string> clauseFragments, string logicalOperator = "AND")

@@ -3,7 +3,7 @@ using System.Linq.Expressions;
 
 namespace DLinq
 {
-    public interface IDLinqConnection
+    public interface IDLinqConnection : IDbConnection
     {
         string ConnectionString { get; set; }
         int ConnectionTimeout { get; }

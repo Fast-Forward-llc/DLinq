@@ -83,21 +83,21 @@ namespace DLinqTests
         public void GetById_SingleKey_ThrowsIfMultipleKeys()
         {
             var conn = GetTestConnection();
-            Assert.ThrowsException<InvalidOperationException>(() => conn.GetById<CompositeKeyEntity, int>(1));
+            Assert.Throws<InvalidOperationException>(() => conn.GetById<CompositeKeyEntity, int>(1));
         }
 
         [TestMethod]
         public void GetById_CompositeKey_ThrowsIfMissingProperty()
         {
             var conn = GetTestConnection();
-            Assert.ThrowsException<ArgumentException>(() => conn.GetById<CompositeKeyEntity>(new { Id = 1 }));
+            Assert.Throws<ArgumentException>(() => conn.GetById<CompositeKeyEntity>(new { Id = 1 }));
         }
 
         [TestMethod]
         public void GetById_ThrowsIfNoKey()
         {
             var conn = GetTestConnection();
-            Assert.ThrowsException<InvalidOperationException>(() => conn.GetById<NoKeyEntity, int>(1));
+            Assert.Throws<InvalidOperationException>(() => conn.GetById<NoKeyEntity, int>(1));
         }
 
         [TestMethod]
