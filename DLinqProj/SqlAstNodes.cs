@@ -10,7 +10,8 @@ namespace DLinq
     {
         public Type FromEntity { get; set; }
         public string FromTable { get; set; }
-        public string TableAlias { get; set; } // NEW: auto-generated alias
+        public string TableAlias { get; set; }
+        public bool Distinct { get; set; }
         public List<Column> Columns { get; set; } = new List<Column>();
         public List<SqlJoin> Joins { get; set; } = new List<SqlJoin>(5);
         public Expression? WhereExpr { get; set; }

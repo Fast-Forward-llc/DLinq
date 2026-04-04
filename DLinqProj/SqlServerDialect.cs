@@ -91,6 +91,7 @@ namespace DLinq
         {
             var sb = new StringBuilder();
             sb.Append("SELECT ");
+            if (ast.Distinct) sb.Append("DISTINCT ");
             if (ast.Columns.Count > 0)
             {
                 sb.Append(string.Join(", ", ast.Columns.Select(c =>

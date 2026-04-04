@@ -306,6 +306,13 @@ namespace DLinq
 
             return this;
         }
+
+        public SqlQuery<T> Distinct()
+        {
+            this.selectNode.Distinct = true;
+            return this;
+        }
+
         public SqlQuery<T> Join<TLeft,TRight>(
             Expression<Func<TLeft, TRight, bool>> onPredicate)
         {
