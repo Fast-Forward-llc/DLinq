@@ -5,10 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 	<PackageId>DLinq</PackageId>
-	<Version>1.1.11</Version>
+	<Version>1.1.12</Version>
 	<Authors>Phillip Bird</Authors>
 	<Company>Fast Forward, LLC</Company>
-	<Description>Linq provider for use with Dapper</Description>
+	<Description>Sql Generator for use with Dapper</Description>
 	<PackageLicenseExpression>MIT</PackageLicenseExpression>
 	<RepositoryUrl>https://github.com/Fast-Forward-llc/DLinq</RepositoryUrl>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
