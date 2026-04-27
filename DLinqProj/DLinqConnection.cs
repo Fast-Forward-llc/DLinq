@@ -603,6 +603,34 @@ namespace DLinq
             }
         }
 
+        public virtual T? ExecScalar<T>(string sql, object parameters)
+        {
+            Open();
+            try
+            {
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                return _dapper.ExecuteScalar<T>(sql, parameters, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
+        public virtual async Task<T?> ExecScalarAsync<T>(string sql, object parameters)
+        {
+            Open();
+            try
+            {
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                return await _dapper.ExecuteScalarAsync<T>(sql, parameters, GetCurrentTransaction()!);
+            }
+            finally
+            {
+                _Close();
+            }
+        }
+
         /// <summary>
         /// Commits the current transaction if one exists, and decrements transaction depth.
         /// Committing a null transaction has no effect.

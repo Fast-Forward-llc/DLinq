@@ -105,6 +105,20 @@ namespace DLinq
         public string SelectStatement(SqlSelectNode ast, List<object> parameters)
         {
             var sb = new StringBuilder();
+
+            // Pre-register function arguments first so they get the lowest parameter indices
+            string? fromFunctionSql = null;
+            if (ast.FromFunction != null)
+            {
+                // Function arguments are already pre-populated in parameters by the translator;
+                // just reference their existing indices (0..args.Count-1).
+                var argCount = ast.FromFunction.Arguments.Count;
+                var args = argCount > 0
+                    ? string.Join(", ", Enumerable.Range(0, argCount).Select(i => ParameterPlaceholder(i)))
+                    : "";
+                fromFunctionSql = $"\"{ast.FromFunction.FunctionName}\"({args}) AS \"{ast.TableAlias}\"";
+            }
+
             sb.Append("SELECT ");
             if (ast.Distinct) sb.Append("DISTINCT ");
             if (ast.Columns.Count > 0)
@@ -121,18 +135,14 @@ namespace DLinq
                 sb.Append("*");
             }
             sb.Append(" FROM ");
-            if (ast.FromFunction != null)
+            if (fromFunctionSql != null)
             {
-                var args = ast.FromFunction.Arguments.Count > 0
-                    ? string.Join(", ", ast.FromFunction.Arguments.Select(a => a is string s ? $"'{s}'" : a.ToString()))
-                    : "";
-                sb.Append($"{ast.FromFunction.FunctionName}({args})");
+                sb.Append(fromFunctionSql);
             }
             else
             {
                 sb.Append(FormatTable(ast.FromTable, ast.TableAlias));
             }
-            // JOIN support
             if (ast.Joins != null)
             {
                 foreach (var join in ast.Joins)

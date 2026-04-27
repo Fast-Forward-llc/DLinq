@@ -41,6 +41,11 @@ namespace DLinq
             return Dapper.SqlMapper.Execute(Connection, sql, param, transaction);
         }
 
+        public virtual T? ExecuteScalar<T>(string sql, object param = null, IDbTransaction transaction = null)
+        {
+            return Dapper.SqlMapper.ExecuteScalar<T>(Connection, sql, param, transaction);
+        }
+
         public virtual IEnumerable<dynamic> Query(string sql, object param = null, IDbTransaction transaction = null)
         {
             return Dapper.SqlMapper.Query(Connection, sql, param, transaction);
@@ -70,6 +75,11 @@ namespace DLinq
         public virtual Task<int> ExecuteAsync(string sql, object param = null, IDbTransaction transaction = null)
         {
             return Dapper.SqlMapper.ExecuteAsync(Connection, sql, param, transaction);
+        }
+
+        public virtual Task<T?> ExecuteScalarAsync<T>(string sql, object param = null, IDbTransaction transaction = null)
+        {
+            return Dapper.SqlMapper.ExecuteScalarAsync<T>(Connection, sql, param, transaction);
         }
 
         public virtual Task<IEnumerable<dynamic>> QueryAsync(string sql, object param = null, IDbTransaction transaction = null)

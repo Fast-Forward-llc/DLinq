@@ -161,6 +161,7 @@ namespace DLinq
             this.selectNode.FromFunction = new SqlFunctionSource() { FunctionName = functionName, Arguments = args.ToList() };
             return this;
         }
+        
         public SqlQuery<T> Where(LambdaExpression predicate)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));

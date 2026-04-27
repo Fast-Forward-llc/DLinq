@@ -703,6 +703,13 @@ namespace DLinq
             parameters = new List<object>();
             var primaryKeys = new List<string>();
 
+            // Pre-populate parameters with TVF arguments so WHERE clause parameters get correct offsets
+            if (queryTree.FromFunction != null)
+            {
+                foreach (var arg in queryTree.FromFunction.Arguments)
+                    parameters.Add(arg);
+            }
+
             ParseJoins(queryTree.Joins, parameters, context);
             queryTree.WhereSqlExpr = ParseWhere(queryTree.WhereExpr, parameters, context);
             foreach (var obe in queryTree.OrderByExpr) ParseOrderBy(obe.Expression, obe.Descending, queryTree.OrderBy, context);

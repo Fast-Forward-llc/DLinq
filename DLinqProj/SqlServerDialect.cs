@@ -106,7 +106,20 @@ namespace DLinq
                 sb.Append("*");
             }
             sb.Append(" FROM ");
-            sb.Append(FormatTable(ast.FromTable, ast.TableAlias));
+            if (ast.FromFunction != null)
+            {
+                var args = ast.FromFunction.Arguments.Count > 0
+                    ? string.Join(",", ast.FromFunction.Arguments.Select((a, i) => $"@p{i}"))
+                    : "";
+                var fnFormatted = $"{FormatIdentifier(ast.FromFunction.FunctionName)}({args})";
+                if (!string.IsNullOrEmpty(ast.TableAlias))
+                    fnFormatted += $" AS [{ast.TableAlias}]";
+                sb.Append(fnFormatted);
+            }
+            else
+            {
+                sb.Append(FormatTable(ast.FromTable, ast.TableAlias));
+            }
             // JOIN support
             if (ast.Joins != null)
             {

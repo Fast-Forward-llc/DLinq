@@ -591,6 +591,69 @@ namespace DLinqTests
             Assert.AreEqual(18, paramDict["p1"]);
         }
 
+        [TestMethod]
+        public void FromFunction()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).FromFunction("GetPeople");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [GetPeople]() AS [t1]", sql);
+        }
+
+        [TestMethod]
+        public void FromFunction_WithPositionalParams()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).FromFunction("GetPeople","John",19);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [GetPeople](@p0,@p1) AS [t1]", sql);
+        }
+
+        [TestMethod]
+        public void FromFunction_WithPositionalParams_AndPredicate()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).FromFunction("GetPeople", "John", 19)
+                .Where(x => x.Age > 18);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [GetPeople](@p0,@p1) AS [t1]\r\nWHERE [t1].[Age] > @p2", sql);
+        }
+
+        [TestMethod]
+        public void FromFunction_JoinWithMultipleConditions_ToPersonProjection()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .FromFunction("GetPeople","John")
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
+                .Select((p) => new Person { Name = p.Name, Age = 4 });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT [t1].[Name] AS [Name], @p1 AS [Age] FROM [GetPeople](@p0) AS [t1] INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)",sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void FromFunction_JoinWithMultipleConditions()
+        {
+            var firstName = "John";
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .FromFunction("GetPeopleByFirstName", firstName)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [GetPeopleByFirstName](@p0) AS [t1] INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John", paramDict["p0"]);
+        }
+
         [Table("DummyTable")]
         private class TestEntity
         {
