@@ -9,6 +9,12 @@ namespace DLinqTests
     [TestClass]
     public class QueryTranslatorTests
     {
+        public class IdNameClass
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
         [TestMethod]
         public void Constructor_SetsDialect()
         {
@@ -24,7 +30,7 @@ namespace DLinqTests
             var translator = new QueryTranslator(dialect);
             var entity = new { Id = 1, Name = "Test" };
             var options = new DLinq.InsertOptions { TableName = "CustomTable" };
-            var result = translator.GenerateInsertSql(entity, options);
+            var result = translator.GenerateInsertSql<IdNameClass>(entity, options);
             // Should use options.TableName
             Assert.IsTrue(result.sql.Contains("CustomTable"));
         }
@@ -36,7 +42,7 @@ namespace DLinqTests
             var translator = new QueryTranslator(dialect);
             var entity = new { Id = 1, Name = "Test" };
             var options = new DLinq.UpdateOptions { TableName = "CustomTable" };
-            var result = translator.GenerateUpdateSql(entity, options);
+            var result = translator.GenerateUpdateSql<IdNameClass>(entity, options);
             Assert.IsTrue(result.sql.Contains("CustomTable"));
         }
 

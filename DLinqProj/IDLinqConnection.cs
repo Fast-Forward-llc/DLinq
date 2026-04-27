@@ -26,9 +26,11 @@ namespace DLinq
         T? GetById<T>(object keyValues);
         Task<T?> GetByIdAsync<T, TKey>(TKey key);
         Task<T?> GetByIdAsync<T>(object keyValues);
-        R? Insert<T, R>(T entity, InsertOptions? options = null);
+        R? Insert<T, R>(object entity, InsertOptions? options = null);
         T? Insert<T>(T entity, InsertOptions? options = null);
-        Task<R?> InsertAsync<T, R>(T entity, InsertOptions? options = null);
+        T? Insert<T>(object entity, InsertOptions? options = null);
+        Task<R?> InsertAsync<T, R>(object entity, InsertOptions? options = null);
+        Task<T?> InsertAsync<T>(object entity, InsertOptions? options = null);
         Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null);
         void Open();
         SqlQuery<T> QueryBuilder<T>();
@@ -40,6 +42,12 @@ namespace DLinq
         void Rollback();
         SqlQuery<T> From<T>();
         T? Update<T>(T entity, UpdateOptions? options = null);
+        T? Update<T>(object entity, UpdateOptions? options = null);
+        T? Update<T>(object entity, Expression<Func<T, bool>> predicate, UpdateOptions? options = null);
         Task<T?> UpdateAsync<T>(T entity, UpdateOptions? options = null);
+        Task<T?> UpdateAsync<T>(object entity, UpdateOptions? options = null);
+        Task<T?> UpdateAsync<T>(object entity, Expression<Func<T, bool>> predicate, UpdateOptions? options = null);
+        int Exec<T>(string sql, object parameters);
+        Task<int> ExecAsync<T>(string sql, object parameters);
     }
 }

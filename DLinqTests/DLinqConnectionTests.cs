@@ -129,6 +129,20 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Update_SelectAfterMutation_WithPredicate_ReturnsEntity()
+        {
+            var mockConn = new Mock<IDbConnection>();
+            var mockDialect = new Mock<PostgresDialect> { CallBase = true };
+            var mockDapperProvider = new Mock<IDapperProvider>();
+            var entity = new SingleKeyEntity { Id = 2, Name = "Updated" };
+            mockDapperProvider.Setup(d => d.QuerySingleOrDefault<SingleKeyEntity>(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<IDbTransaction>())).Returns(entity);
+            var conn = new DLinqConnection(mockConn.Object, mockDialect.Object, mockDapperProvider.Object);
+            var options = new DLinq.UpdateOptions { SelectAfterMutation = true };
+            var result = conn.Update<SingleKeyEntity>(entity, _ => _.Name.StartsWith("X"), options);
+            Assert.AreEqual(entity, result);
+        }
+
+        [TestMethod]
         public void Delete_ExecutesDapper()
         {
             var mockConn = new Mock<IDbConnection>();

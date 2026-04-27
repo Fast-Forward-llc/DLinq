@@ -79,50 +79,41 @@ namespace DLinq
         }
 
         // Method to generate Insert SQL for the specified entity
-        public (string sql, object parameters) ToInsertSql(T entity, InsertOptions? options = null)
+        public (string sql, object parameters) ToInsertSql(object entity, InsertOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
-                return qp.Translator.GenerateInsertSql(entity, options);
-            }
-            throw new NotSupportedException("ToInsertSql is only supported for SqlQuery using QueryProvider.");
-        }
-
-        public (string sql, object parameters) ToInsertSql<R>(T entity, InsertOptions? options = null)
-        {
-            if (Provider is QueryProvider qp)
-            {
-                return qp.Translator.GenerateInsertSql(entity, options);
+                return qp.Translator.GenerateInsertSql<T>(entity, options);
             }
             throw new NotSupportedException("ToInsertSql is only supported for SqlQuery using QueryProvider.");
         }
 
         // Method to generate Update SQL for the specified entity
-        public (string sql, object parameters) ToUpdateSql(T entity, UpdateOptions? options = null)
+        public (string sql, object parameters) ToUpdateSql(object entity, UpdateOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
-                return qp.Translator.GenerateUpdateSql(entity, options);
+                return qp.Translator.GenerateUpdateSql<T>(entity, options);
             }
             throw new NotSupportedException("ToUpdateSql is only supported for SqlQuery using QueryProvider.");
         }
 
         // Method to generate Update SQL for the specified entity with a where predicate
-        public (string sql, object parameters) ToUpdateSql(T entity, Expression<Func<T, bool>> wherePredicate, UpdateOptions? options = null)
+        public (string sql, object parameters) ToUpdateSql(object entity, Expression<Func<T, bool>> wherePredicate, UpdateOptions? options = null)
         {
             if (Provider is QueryProvider qp)
             {
-                return qp.Translator.GenerateUpdateSql(entity, wherePredicate, options);
+                return qp.Translator.GenerateUpdateSql<T>(entity, wherePredicate, options);
             }
             throw new NotSupportedException("ToUpdateSql is only supported for SqlQuery using QueryProvider.");
         }
 
         // Existing overload for backward compatibility
-        public (string sql, object parameters) ToUpdateSql(T entity)
+        public (string sql, object parameters) ToUpdateSql(object entity)
         {
             if (Provider is QueryProvider qp)
             {
-                return qp.Translator.GenerateUpdateSql(entity);
+                return qp.Translator.GenerateUpdateSql<T>(entity);
             }
             throw new NotSupportedException("ToUpdateSql is only supported for SqlQuery using QueryProvider.");
         }

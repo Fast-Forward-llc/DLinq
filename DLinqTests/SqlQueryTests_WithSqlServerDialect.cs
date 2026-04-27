@@ -147,7 +147,17 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider);
             var (sql, parameters) = query.ToInsertSql(new Person { Name = "Test", Age = 20 });
             Console.WriteLine(sql);
-            Assert.IsTrue(sql.StartsWith("INSERT INTO"));
+            Assert.AreEqual("INSERT INTO [Person] ([Name], [Age]) VALUES (@Name, @Age)", sql);
+        }
+
+        [TestMethod]
+        public void ToInsertSql_Anonymous()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider);
+            var (sql, parameters) = query.ToInsertSql(new { Name = "Test", Age = 20 });
+            Console.WriteLine(sql);
+            Assert.AreEqual("INSERT INTO [Person] ([Name], [Age]) VALUES (@Name, @Age)",sql);
         }
 
         [TestMethod]
@@ -170,7 +180,27 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider);
             var (sql, parameters) = query.ToUpdateSql(new Person { Id = 1, Name = "Test", Age = 21 });
             Console.WriteLine(sql);
-            Assert.IsTrue(sql.StartsWith("UPDATE"));
+            Assert.AreEqual("UPDATE [Person] SET [Name] = @Name, [Age] = @Age\r\nWHERE [Id] = @p0",sql);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_WithPredicate()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider);
+            var (sql, parameters) = query.ToUpdateSql(new Person { Id = 1, Name = "Test", Age = 21 }, _ => _.Name.StartsWith("X"));
+            Console.WriteLine(sql);
+            Assert.AreEqual("UPDATE [Person] SET [Name] = @Name, [Age] = @Age\r\nWHERE [Person].[Name] LIKE @p0",sql);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_Anonymous_WithPredicate()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider);
+            var (sql, parameters) = query.ToUpdateSql(new { Id = 1, Name = "Test", Age = 21 }, _ => _.Name.StartsWith("X"));
+            Console.WriteLine(sql);
+            Assert.AreEqual("UPDATE [Person] SET [Name] = @Name, [Age] = @Age\r\nWHERE [Person].[Name] LIKE @p0", sql);
         }
 
         [TestMethod]

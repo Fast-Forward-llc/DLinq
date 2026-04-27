@@ -811,13 +811,15 @@ namespace DLinq
         /// <param name="entity">Entity object to insert.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string and parameters object.</returns>
-        public (string sql, object parameters) GenerateInsertSql(object entity, InsertOptions? options = null)
+        public (string sql, object parameters) GenerateInsertSql<TableType>(object entity, InsertOptions? options = null)
         {
             options ??= new InsertOptions();
             var entityType = entity.GetType();
-            var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
-            var tableName = options.TableName ?? GetEntityTableName(entityType);
-            var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var tableType = typeof(TableType);
+            var tableAttr = tableType.GetCustomAttribute<TableAttribute>();
+            var tableName = options.TableName ?? GetEntityTableName(tableType);
+            var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var columns = new List<string>();
             var paramNames = new List<string>();
             var paramDict = new Dictionary<string, object>();
@@ -830,14 +832,16 @@ namespace DLinq
                 var colName = colAttr?.Name ?? prop.Name;
                 var dbGenAttr = prop.GetCustomAttribute<DatabaseGeneratedAttribute>();
                 bool isIdentity = dbGenAttr != null && dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Identity;
+                if (!(entityProps.ContainsKey(prop.Name) && entityProps[prop.Name].GetValue(entity) != null))
+                    continue; // Skip properties that are not present on the actual entity instance
                 if (prop.GetCustomAttribute<KeyAttribute>() != null && colName != null)
-                    keyInfo.Add((colName, prop.GetValue(entity), isIdentity));
+                    keyInfo.Add((colName, entityProps[prop.Name].GetValue(entity), isIdentity));
                 if (dbGenAttr != null && (dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Identity || dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Computed))
                     continue;
                 var paramName = _dialect.FormatParameter(colName);
                 columns.Add(colName);
                 paramNames.Add(paramName);
-                paramDict[paramName] = prop.GetValue(entity);
+                paramDict[paramName] = entityProps[prop.Name].GetValue(entity);
             }
             var sql = _dialect.InsertStatement(tableName, columns, paramNames, options);
 
@@ -863,12 +867,14 @@ namespace DLinq
         /// <param name="entity">Entity object to update.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string and parameters object.</returns>
-        public (string sql, object parameters) GenerateUpdateSql(object entity, UpdateOptions? options = null)
+        public (string sql, object parameters) GenerateUpdateSql<TableType>(object entity, UpdateOptions? options = null)
         {
             options ??= new UpdateOptions();
             var entityType = entity.GetType();
-            var tableName = options.TableName ?? GetEntityTableName(entityType);
-            var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var tableType = typeof(TableType);
+            var tableName = options.TableName ?? GetEntityTableName(tableType);
+            var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var setDict = new Dictionary<string, object>();
             var primaryKeys = new List<(string colName, object value)>();
             var whereParams = new List<object>();
@@ -880,9 +886,11 @@ namespace DLinq
                 var dbGenAttr = prop.GetCustomAttribute<DatabaseGeneratedAttribute>();
                 if (dbGenAttr != null && dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Computed)
                     continue;
+                if (!entityProps.ContainsKey(prop.Name))
+                    continue; // Skip properties that are not present on the actual entity instance
                 var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
                 var colName = colAttr?.Name ?? prop.Name;
-                var value = prop.GetValue(entity);
+                var value = entityProps[prop.Name].GetValue(entity);
                 if (prop.GetCustomAttribute<KeyAttribute>() != null)
                 {
                     primaryKeys.Add((colName, value));
@@ -932,13 +940,15 @@ namespace DLinq
         /// <param name="wherePredicate">Custom predicate expression for WHERE clause.</param>
         /// <param name="options">Mutation options (optional, includes TableName).</param>
         /// <returns>Tuple of SQL string and parameters object.</returns>
-        public (string sql, object parameters) GenerateUpdateSql(object entity, Expression wherePredicate, UpdateOptions? options = null)
+        public (string sql, object parameters) GenerateUpdateSql<TableType>(object entity, Expression wherePredicate, UpdateOptions? options = null)
         {
             options ??= new UpdateOptions();
             var context = new TranslateContext { dialect = _dialect };
             var entityType = entity.GetType();
-            var tableName = options.TableName ?? GetEntityTableName(entityType);
-            var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var tableType = typeof(TableType);
+            var tableName = options.TableName ?? GetEntityTableName(tableType);
+            var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var setDict = new Dictionary<string, object>();
             var primaryKeys = new List<(string colName, object value)>();
 
@@ -949,9 +959,11 @@ namespace DLinq
                 var dbGenAttr = prop.GetCustomAttribute<DatabaseGeneratedAttribute>();
                 if (dbGenAttr != null && dbGenAttr.DatabaseGeneratedOption == DatabaseGeneratedOption.Computed)
                     continue;
+                if (!entityProps.ContainsKey(prop.Name))
+                    continue; // Skip properties that are not present on the actual entity instance
                 var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
                 var colName = colAttr?.Name ?? prop.Name;
-                var value = prop.GetValue(entity);
+                var value = entityProps[prop.Name].GetValue(entity);
                 if (prop.GetCustomAttribute<KeyAttribute>() != null)
                 {
                     primaryKeys.Add((colName, value));
@@ -970,7 +982,7 @@ namespace DLinq
             if (wherePredicate != null)
             {
                 // Register the entity type alias for column resolution
-                context.TableAliasMap[entityType.FullName!] = tableName;
+                context.TableAliasMap[tableType.FullName!] = tableName;
 
                 // Parse the predicate using the robust ParsePredicate method
                 whereSql = ParsePredicate(wherePredicate, parameters, context, entityParamNames);
