@@ -770,6 +770,51 @@ namespace DLinqTests
             Assert.AreEqual(18, paramDict["p0"]);
         }
 
+        [Table("Users")]
+        private class AppUser
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        private class PersonWithUser
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public int Age { get; set; }
+            public int UserId { get; set; }
+        }
+
+        [TestMethod]
+        public void AndWhere_TwoJoins_ReferencingAllThreeEntities()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<PersonWithUser>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<AppUser>((person, user) => person.UserId == user.Id)
+                .Where(person => person.Name != null)
+                .AndWhere<Pet, AppUser>((person, pet, user) =>
+                    person.Age > 18 && pet.Name != null && user.Id > 0)
+                .Select<PersonWithUser, Pet, AppUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName], [t3].[Name] AS [UserName] "
+                + "FROM [PersonWithUser] AS [t1] "
+                + "INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
+                + "INNER JOIN [Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
+                + "WHERE [t1].[Name] IS NOT NULL AND (([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)) AND ([t3].[Id] > @p1)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(0, paramDict["p1"]);
+        }
+
         private class Department
         {
             public int Id { get; set; }
