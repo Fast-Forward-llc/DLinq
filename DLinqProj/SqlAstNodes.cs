@@ -23,6 +23,7 @@ namespace DLinq
         public List<(Column Column, bool Descending)> OrderBy { get; set; } = new List<(Column, bool)>();
         public Expression SelectExpr { get; set; }
         public List<(LambdaExpression Expression, bool Descending)> OrderByExpr { get; set; } = new List<(LambdaExpression, bool)>(3);
+        public List<(LambdaExpression Expr, string LogicalOperator)> ChainedWherePredicates { get; set; } = new();
     }
 
     public class SqlFunctionSource

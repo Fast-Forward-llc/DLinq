@@ -662,6 +662,114 @@ namespace DLinqTests
             public string Name { get; set; }
         }
 
+        [TestMethod]
+        public void AndWhere_WithoutBaseWhere_GeneratesSingleWhereClause()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .AndWhere(x => x.Age > 18);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Age] > @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void OrWhere_WithoutBaseWhere_GeneratesSingleWhereClause()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .OrWhere(x => x.Name == "John");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Name] = @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_AndWhere_CombinesWithAndOperator()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .AndWhere(x => x.Name == "John");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Age] > @p0 AND [t1].[Name] = @p1", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual("John", paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void Where_OrWhere_CombinesWithOrOperator()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .OrWhere(x => x.Name == "John");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Age] > @p0 OR [t1].[Name] = @p1", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual("John", paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void Where_AndWhere_OrWhere_CombinesInOrder()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .AndWhere(x => x.Age < 65)
+                .OrWhere(x => x.Name == "Admin");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Age] > @p0 AND [t1].[Age] < @p1 OR [t1].[Name] = @p2", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(65, paramDict["p1"]);
+            Assert.AreEqual("Admin", paramDict["p2"]);
+        }
+
+        [TestMethod]
+        public void AndWhere_ChainedMultiple_CombinesAllWithAnd()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .AndWhere(x => x.Age > 18)
+                .AndWhere(x => x.Age < 65)
+                .AndWhere(x => x.Name == "John");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Age] > @p0 AND [t1].[Age] < @p1 AND [t1].[Name] = @p2", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(65, paramDict["p1"]);
+            Assert.AreEqual("John", paramDict["p2"]);
+        }
+
+        [TestMethod]
+        public void AndWhere_WithJoin_AppliesWhereAfterJoin()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .AndWhere(x => x.Age > 18)
+                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1] "
+                + "INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]\r\n"
+                + "WHERE [t1].[Age] > @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+        }
+
         private class Department
         {
             public int Id { get; set; }

@@ -20,8 +20,73 @@ var query = new SqlQuery<Person>(provider)
     .Skip(2)
     .Take(10);
 ```
-- Supported methods: `Where`, `OrderBy`, `OrderByDescending`, `ThenBy`, `ThenByDescending`, `Skip`, `Take`, `Select`, and `Join`.
+- Supported methods: `Where`, `AndWhere`, `OrWhere`, `OrderBy`, `OrderByDescending`, `ThenBy`, `ThenByDescending`, `Skip`, `Take`, `Select`, and `Join`.
 - All lambda parameters must be expressions (e.g., `Expression<Func<T, TResult>>`), not delegates.
+
+## Filtering with Where, AndWhere, and OrWhere
+`Where` sets the base WHERE predicate for the query. `AndWhere` and `OrWhere` append additional predicates, combining them with `AND` and `OR` respectively. Predicates are evaluated in declaration order, without implicit grouping — wrap compound expressions in a single lambda when precedence matters.
+
+### `Where` — set the base predicate
+```
+var query = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 18);
+// WHERE "t1"."Age" > @p0
+```
+
+### `AndWhere` — append a predicate with AND
+```
+var query = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 18)
+    .AndWhere(x => x.Name == "John");
+// WHERE "t1"."Age" > @p0 AND "t1"."Name" = @p1
+```
+
+Multiple `AndWhere` calls can be chained:
+```
+var query = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 18)
+    .AndWhere(x => x.Age < 65)
+    .AndWhere(x => x.Name == "John");
+// WHERE "t1"."Age" > @p0 AND "t1"."Age" < @p1 AND "t1"."Name" = @p2
+```
+
+### `OrWhere` — append a predicate with OR
+```
+var query = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 18)
+    .OrWhere(x => x.Name == "Admin");
+// WHERE "t1"."Age" > @p0 OR "t1"."Name" = @p1
+```
+
+### Mixing AndWhere and OrWhere
+`AndWhere` and `OrWhere` can be freely mixed. Predicates are combined in declaration order without implicit parenthesisation:
+```
+var query = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 18)
+    .AndWhere(x => x.Age < 65)
+    .OrWhere(x => x.Name == "Admin");
+// WHERE "t1"."Age" > @p0 AND "t1"."Age" < @p1 OR "t1"."Name" = @p2
+```
+
+> **Note:** If `AndWhere` or `OrWhere` is called without a prior `Where`, the first additional predicate becomes the sole base fragment and its operator is not emitted:
+> ```
+> var query = new SqlQuery<Person>(provider)
+>     .AndWhere(x => x.Age > 18)
+>     .AndWhere(x => x.Name == "John");
+> // WHERE "t1"."Age" > @p0 AND "t1"."Name" = @p1
+> ```
+
+### AndWhere / OrWhere with Joins
+Additional predicates compose naturally with joins:
+```
+var query = new SqlQuery<Person>(provider)
+    .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+    .AndWhere(x => x.Age > 18)
+    .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
+// SELECT ... FROM "Person" AS "t1"
+// INNER JOIN "Pet" AS "t2" ON "t1"."Id" = "t2"."OwnerId"
+// WHERE "t1"."Age" > @p0
+```
 
 ## Join Syntax
 `SqlQuery<T>` supports several join syntaxes:
@@ -127,6 +192,21 @@ var (deleteSql2, deleteParams2) = query.ToDeleteSql(new Person { Id = 1 });
 ```
 // Setup
 var provider = new QueryProvider(new SqlServerDialect());
+
+// Query for people older than 18, with an additional name filter
+var query = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 18)
+    .AndWhere(x => x.Name == "Alice");
+var (sql, parameters) = query.ToSql();
+// Use with Dapper:
+var results = connection.Query<Person>(sql, parameters);
+
+// Query using OrWhere
+var orQuery = new SqlQuery<Person>(provider)
+    .Where(x => x.Age > 65)
+    .OrWhere(x => x.Name == "Admin");
+var (orSql, orParams) = orQuery.ToSql();
+var orResults = connection.Query<Person>(orSql, orParams);
 
 // Query for people older than 18
 var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);

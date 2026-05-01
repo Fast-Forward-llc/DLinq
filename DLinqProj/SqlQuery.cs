@@ -199,6 +199,48 @@ namespace DLinq
             this.selectNode.WhereExpr = predicate;
             return this;
         }
+
+        public SqlQuery<T> AndWhere(Expression<Func<T, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.ChainedWherePredicates.Add((predicate, "AND"));
+            return this;
+        }
+
+        public SqlQuery<T> AndWhere<T1>(Expression<Func<T, T1, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.ChainedWherePredicates.Add((predicate, "AND"));
+            return this;
+        }
+
+        public SqlQuery<T> AndWhere<T1, T2>(Expression<Func<T, T1, T2, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.ChainedWherePredicates.Add((predicate, "AND"));
+            return this;
+        }
+
+        public SqlQuery<T> OrWhere(Expression<Func<T, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.ChainedWherePredicates.Add((predicate, "OR"));
+            return this;
+        }
+
+        public SqlQuery<T> OrWhere<T1>(Expression<Func<T, T1, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.ChainedWherePredicates.Add((predicate, "OR"));
+            return this;
+        }
+
+        public SqlQuery<T> OrWhere<T1, T2>(Expression<Func<T, T1, T2, bool>> predicate)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            this.selectNode.ChainedWherePredicates.Add((predicate, "OR"));
+            return this;
+        }
         private void AddOrderBy(LambdaExpression expression, bool descending)
         {
             if (expression == null) throw new ArgumentNullException(nameof(expression));

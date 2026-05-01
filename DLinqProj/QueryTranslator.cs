@@ -711,7 +711,7 @@ namespace DLinq
             }
 
             ParseJoins(queryTree.Joins, parameters, context);
-            queryTree.WhereSqlExpr = ParseWhere(queryTree.WhereExpr, parameters, context);
+            queryTree.WhereSqlExpr = ParseWhere(queryTree.WhereExpr, parameters, context, queryTree.ChainedWherePredicates);
             foreach (var obe in queryTree.OrderByExpr) ParseOrderBy(obe.Expression, obe.Descending, queryTree.OrderBy, context);
 
             var projectedColumns = ParseProjectionColumns(queryTree.SelectExpr, context, parameters);
@@ -1530,17 +1530,39 @@ namespace DLinq
             orderBy.Add((new Column(null, tableAlias, colInfo.colName, colAlias), Descending));
         }
 
-        private string? ParseWhere(Expression? expr, List<object> parameters, TranslateContext context)
+        private string? ParseWhere(Expression? expr, List<object> parameters, TranslateContext context,
+            IReadOnlyList<(LambdaExpression Expr, string LogicalOperator)>? additionalPredicates = null)
         {
-            if (expr == null) return null;
-            var whereLambda = expr as LambdaExpression;
-            var entityParamNames = new HashSet<string>(5);
-            foreach (var p in whereLambda.Parameters)
-                entityParamNames.Add(p.Name!);
+            string? baseFragment = null;
+            if (expr != null)
+            {
+                var whereLambda = (LambdaExpression)expr;
+                var entityParamNames = new HashSet<string>(5);
+                foreach (var p in whereLambda.Parameters)
+                    entityParamNames.Add(p.Name!);
+                baseFragment = ParsePredicate(whereLambda.Body, parameters, context, entityParamNames);
+            }
 
-            var thisWhereSql = ParsePredicate(whereLambda.Body, parameters, context, entityParamNames);
+            var fragments = new List<string>();
+            if (baseFragment != null)
+                fragments.Add(baseFragment);
 
-            return _dialect.WhereClauseFromFragments(new[] { thisWhereSql });
+            if (additionalPredicates != null)
+            {
+                foreach (var (additionalExpr, logicalOperator) in additionalPredicates)
+                {
+                    var entityParamNames = new HashSet<string>(5);
+                    foreach (var p in additionalExpr.Parameters)
+                        entityParamNames.Add(p.Name!);
+                    var fragment = ParsePredicate(additionalExpr.Body, parameters, context, entityParamNames);
+                    // Only prefix with the logical operator when there is already a preceding fragment
+                    fragments.Add(fragments.Count > 0 ? $"{logicalOperator} {fragment}" : fragment);
+                }
+            }
+
+            if (fragments.Count == 0) return null;
+
+            return "\r\nWHERE " + fragments[0] + (fragments.Count > 1 ? " " + string.Join(" ", fragments.Skip(1)) : "");
         }
 
         private static object? EvaluateMemberExpression(MemberExpression memberExpr)
