@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Dynamic;
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace DLinqTests
 {
@@ -779,7 +780,7 @@ namespace DLinqTests
             public string Name { get; set; }
         }
 
-        private class PersonWithUser
+        protected class PersonWithUser
         {
             [Key]
             [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -813,6 +814,35 @@ namespace DLinqTests
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
             Assert.AreEqual(0, paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void OrWhere_TwoJoins_BuildPredicateExternally()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<PersonWithUser>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<AppUser>((person, user) => person.UserId == user.Id)
+                .Select<PersonWithUser, Pet, AppUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            SqlQueryTests_BuildPredicate(query);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName], [t3].[Name] AS [UserName] FROM [PersonWithUser] AS [t1] INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] INNER JOIN [Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\nWHERE [t1].[Name] = @p0 OR [t1].[Name] = @p1 OR [t1].[Name] = @p2", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Alice", paramDict["p0"]);
+            Assert.AreEqual("Bob", paramDict["p1"]);
+            Assert.AreEqual("Charlie", paramDict["p2"]);
+        }
+
+        protected void SqlQueryTests_BuildPredicate(SqlQuery<PersonWithUser> query)
+        {
+            var names = new List<string>() { "Alice", "Bob", "Charlie" };
+            foreach (var name in names)
+            {
+                query.OrWhere(x => x.Name == name);
+            }
         }
 
         private class Department
