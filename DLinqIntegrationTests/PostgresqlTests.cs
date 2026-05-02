@@ -197,6 +197,26 @@ namespace DLinqIntegrationTests
         }
 
         [TestMethod]
+        public void QueryPerson_NoResults_ReturnsEmptyList()
+        {
+            var results = dlinq.Query<Person>(x => x.Id == -2).ToList();
+
+            Assert.IsEmpty(results);
+        }
+
+        [TestMethod]
+        public void QueryPerson_NoResults_ProjectionReturnsEmptyList()
+        {
+            var query = dlinq.From<Person>()
+                .Where(x => x.Id == -2)
+                .AndWhere(x => x.FirstName == "NonExistent")
+                .Select<Person>(p => new PersonUpdateName() { Id = p.Id ?? 0 });
+            var results = dlinq.Query<PersonUpdateName>(query).ToList();
+
+            Assert.IsEmpty(results);
+        }
+
+        [TestMethod]
         public void QueryPerson_SkipTakeOrderBy_Success()
         {
             // Insert multiple people
