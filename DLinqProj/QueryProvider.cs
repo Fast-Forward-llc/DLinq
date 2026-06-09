@@ -20,6 +20,12 @@ namespace DLinq
             _translator = new QueryTranslator(_dialect);
         }
 
+        public QueryProvider(ISqlDialect dialect, Func<Type, string, string> entity2TableMapper):this(dialect)
+        {
+            _dialect = dialect;
+            _translator = new QueryTranslator(_dialect, entity2TableMapper);
+        }
+
         public QueryTranslator Translator => _translator;
 
         public IQueryable CreateQuery(Expression expression)

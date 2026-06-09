@@ -152,6 +152,20 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void ToInsertSql_MapSchema()
+        {
+            var provider = GetProvider();
+            provider.Translator.Entity2TableMapper = (entityType, tableName) =>
+            {
+                return "schema." + tableName;
+            };
+            var query = new SqlQuery<Person>(provider);
+            var (sql, parameters) = query.ToInsertSql(new Person { Name = "Test", Age = 20 });
+            Console.WriteLine(sql);
+            Assert.AreEqual("INSERT INTO [schema].[Person] ([Name], [Age]) VALUES (@Name, @Age)", sql);
+        }
+
+        [TestMethod]
         public void ToInsertSql_Anonymous()
         {
             var provider = GetProvider();
@@ -184,6 +198,20 @@ namespace DLinqTests
             Assert.AreEqual("UPDATE [Person] SET [Name] = @Name, [Age] = @Age\r\nWHERE [Id] = @p0",sql);
         }
 
+        [TestMethod]
+        public void ToUpdateSql_MapSchema()
+        {
+            var provider = GetProvider();
+            provider.Translator.Entity2TableMapper = (entityType, tableName) =>
+            {
+                return "schema." + tableName;
+            };
+            var query = new SqlQuery<Person>(provider);
+            var (sql, parameters) = query.ToUpdateSql(new Person { Id = 1, Name = "Test", Age = 21 });
+            Console.WriteLine(sql);
+            Assert.AreEqual("UPDATE [schema].[Person] SET [Name] = @Name, [Age] = @Age\r\nWHERE [Id] = @p0", sql);
+        }
+        
         [TestMethod]
         public void ToUpdateSql_WithPredicate()
         {
@@ -809,6 +837,36 @@ namespace DLinqTests
                 + "FROM [PersonWithUser] AS [t1] "
                 + "INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
                 + "INNER JOIN [Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
+                + "WHERE [t1].[Name] IS NOT NULL AND (([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)) AND ([t3].[Id] > @p1)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(0, paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void AndWhere_TwoJoins_ThreeEntities_CustomMapping()
+        {
+            var provider = GetProvider();
+            provider.Translator.Entity2TableMapper = (entityType, tableName) =>
+            { 
+                return "schema."+tableName;
+            };
+            var query = new SqlQuery<PersonWithUser>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<AppUser>((person, user) => person.UserId == user.Id)
+                .Where(person => person.Name != null)
+                .AndWhere<Pet, AppUser>((person, pet, user) =>
+                    person.Age > 18 && pet.Name != null && user.Id > 0)
+                .Select<PersonWithUser, Pet, AppUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName], [t3].[Name] AS [UserName] "
+                + "FROM [schema].[PersonWithUser] AS [t1] "
+                + "INNER JOIN [schema].[Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
+                + "INNER JOIN [schema].[Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
                 + "WHERE [t1].[Name] IS NOT NULL AND (([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)) AND ([t3].[Id] > @p1)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;

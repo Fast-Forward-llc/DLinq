@@ -27,11 +27,31 @@ namespace DLinq
 
         public static bool EnableSqlConsoleLogging { get; set; } = false;
 
+        /// <summary>
+        /// Map entity names to table names. assign custom mapping function.
+        /// P1 = Entity.FullName
+        /// P2 = TableName (from attribute mapping)
+        /// Return = your mapped table name. if null is returned TableName will be used as the mapping
+        /// </summary>
+        public Func<Type, string, string>? Entity2TableMapper {
+            get {
+                return _provider.Translator.Entity2TableMapper;
+            }
+            set {
+                _provider.Translator.Entity2TableMapper = value;
+            }
+        }
+
         public DLinqConnection(IDbConnection connection, ISqlDialect dialect, IDapperProvider? dapperProvider = null)
         {
             _conn = connection;
             _provider = new QueryProvider(dialect);
             _dapper = dapperProvider ?? new DapperProvider(connection);
+        }
+
+        public DLinqConnection(IDbConnection connection, ISqlDialect dialect, Func<Type, string, string>? Entity2TableMapper, IDapperProvider? dapperProvider = null):this(connection, dialect, dapperProvider)
+        {
+            this.Entity2TableMapper = Entity2TableMapper;
         }
 
         public virtual IEnumerable<T> Query<T>(SqlTextExpression sqlQuery)

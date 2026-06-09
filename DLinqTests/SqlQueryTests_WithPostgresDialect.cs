@@ -420,6 +420,32 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Join_MultipleOfSameTable_MapSchema()
+        {
+            var minAge = 18;
+            var provider = GetProvider();
+            provider.Translator.Entity2TableMapper = (entityName, tableName) =>
+            {
+                return "schema." + tableName;
+            };
+            var query = new SqlQuery<Person3>(provider)
+                .Where(p => p.Age > minAge)
+                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
+                .Join<ModifiedByUser>((person, user) => person.ModifiedByUserId == user.Id)
+                .Select<Person3, CreatedByUser, ModifiedByUser>((p, c, m) => new { PersonName = p.Name, CreatedByUser = c.Name, ModifiedByUser = m.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"CreatedByUser\", \"t3\".\"Name\" AS \"ModifiedByUser\" FROM \"schema\".\"person\" AS \"t1\" "
+                + "INNER JOIN \"schema\".\"Users\" AS \"t2\" ON \"t1\".\"CreatedByUserId\" = \"t2\".\"Id\" "
+                + "INNER JOIN \"schema\".\"Users\" AS \"t3\" ON \"t1\".\"ModifiedByUserId\" = \"t3\".\"Id\"\r\n"
+                + "WHERE \"t1\".\"Age\" > @p0"
+                , sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("Age"));
+        }
+
+        [TestMethod]
         public void Join_MultipleWithSurrogates()
         {
             var provider = GetProvider();
@@ -650,6 +676,35 @@ namespace DLinqTests
             Assert.AreEqual(0, paramDict["p1"]);
         }
 
+        [TestMethod]
+        public void AndWhere_TwoJoins_ThreeEntities_CustomMapping()
+        {
+            var provider = GetProvider();
+            provider.Translator.Entity2TableMapper = (entityName, tableName) =>
+            {
+                return "schema." + tableName;
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<CreatedByUser>((person, user) => person.CreatedByUserId == user.Id)
+                .Where(person => person.Name != null)
+                .AndWhere<Pet, CreatedByUser>((person, pet, user) =>
+                    person.Age > 18 && pet.Name != null && user.Id > 0)
+                .Select<Person, Pet, CreatedByUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\", \"t3\".\"Name\" AS \"UserName\" "
+                + "FROM \"schema\".\"Person\" AS \"t1\" "
+                + "INNER JOIN \"schema\".\"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
+                + "INNER JOIN \"schema\".\"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\"\r\n"
+                + "WHERE \"t1\".\"Name\" IS NOT NULL AND ((\"t1\".\"Age\" > @p0) AND (\"t2\".\"Name\" IS NOT NULL)) AND (\"t3\".\"Id\" > @p1)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(0, paramDict["p1"]);
+        }
 
 
 

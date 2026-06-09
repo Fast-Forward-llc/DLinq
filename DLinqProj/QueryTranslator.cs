@@ -37,10 +37,23 @@ namespace DLinq
             _dialect = dialect;
         }
 
+        public QueryTranslator(ISqlDialect dialect, Func<Type, string,string> entity2TableMapper):this(dialect)
+        {
+            Entity2TableMapper = entity2TableMapper;
+        }
+
         /// <summary>
         /// Exposes the ISqlDialect instance used by this QueryTranslator.
         /// </summary>
         public ISqlDialect Dialect => _dialect;
+
+        /// <summary>
+        /// Map entity names to table names. assign custom mapping function.
+        /// P1 = Entity Type
+        /// P2 = TableName (from attribute mapping)
+        /// Return = your mapped table name. if null is returned TableName will be used as the mapping
+        /// </summary>
+        public Func<Type, string, string>? Entity2TableMapper { get; set; }
 
         // Helper to get the correct alias for an entity type (by full name)
         private static string GetAliasForEntity(Type entityType, TranslateContext context, bool addIfNotFound = true)
@@ -210,12 +223,13 @@ namespace DLinq
             }
         }
 
-        internal static string GetEntityTableName(Type entityType)
+        internal string GetEntityTableName(Type entityType)
         {
             if (entityType == null) return string.Empty;
             if (entityType.Name == nameof(ConstantExpression)) return string.Empty;
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = tableAttr?.Name ?? entityType.Name;
+            if (Entity2TableMapper != null) tableName = Entity2TableMapper(entityType, tableName) ?? tableName;
             return tableName;
         }
 
@@ -277,7 +291,7 @@ namespace DLinq
         }
 
         // Recursively parse predicate, parameterizing all MemberExpressions not from entityParamNames
-        private static string ParsePredicateWithEntityParams(Expression expr, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
+        private string ParsePredicateWithEntityParams(Expression expr, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
         {
             switch (expr)
             {
@@ -417,7 +431,7 @@ namespace DLinq
             return false;
         }
 
-        internal static (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberExpression member, TranslateContext context)
+        internal (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberExpression member, TranslateContext context)
         {
             var memberInfo = member.Member;
             var colAttr = memberInfo.GetCustomAttribute<ColumnAttribute>();
@@ -434,7 +448,7 @@ namespace DLinq
         /// <param name="member"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        internal static (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberInfo memberInfo, TranslateContext context)
+        internal (string colName, string colTableName, Type colEntityType) GetColumnInfo(MemberInfo memberInfo, TranslateContext context)
         {
             var colAttr = memberInfo.GetCustomAttribute<ColumnAttribute>();
             var colName = colAttr?.Name ?? memberInfo.Name;
@@ -630,7 +644,7 @@ namespace DLinq
             throw new NotSupportedException("Unsupported Contains predicate.");
         }
 
-        private static string ParseContainsPredicate(MethodCallExpression containsCall, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
+        private string ParseContainsPredicate(MethodCallExpression containsCall, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
         {
             var (member, paramNames) = ParseContainsPredicateCore(containsCall, parameters, context, entityParamNames);
             var (colName, _, colEntityType) = GetColumnInfo(member, context);
@@ -639,7 +653,7 @@ namespace DLinq
 
         }
 
-        private static string ParseNotContainsPredicate(MethodCallExpression containsCall, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
+        private string ParseNotContainsPredicate(MethodCallExpression containsCall, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
         {
             var (member, paramNames) = ParseContainsPredicateCore(containsCall, parameters, context, entityParamNames);
             var (colName, _, colEntityType) = GetColumnInfo(member, context);
@@ -648,7 +662,7 @@ namespace DLinq
 
         }
 
-        private static string ParseStringMethodPredicate(MethodCallExpression methodCall, string methodName, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
+        private string ParseStringMethodPredicate(MethodCallExpression methodCall, string methodName, List<object> parameters, TranslateContext context, HashSet<string> entityParamNames)
         {
             // Handles: x.Name.StartsWith("value"), x.Name.EndsWith("value"), x.Name.Contains("value")
             if (methodCall.Object is MemberExpression member && IsEntityMember(member, entityParamNames) && methodCall.Arguments.Count == 1)
@@ -1518,7 +1532,7 @@ namespace DLinq
         }
 
         // Helper for OrderBy/ThenBy
-        private static void ParseOrderBy(LambdaExpression lambda, bool Descending, List<(Column Column, bool Descending)> orderBy, TranslateContext context)
+        private void ParseOrderBy(LambdaExpression lambda, bool Descending, List<(Column Column, bool Descending)> orderBy, TranslateContext context)
         {
             var member = GetMemberInfoFromLambda(lambda);
             if (member == null)
