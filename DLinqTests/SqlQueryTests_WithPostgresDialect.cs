@@ -374,7 +374,7 @@ namespace DLinqTests
             Console.WriteLine(sql);
             Assert.AreEqual(
                 "SELECT \"t1\".\"Name\" AS \"PersonName\", \"t2\".\"Name\" AS \"PetName\" FROM \"Person\" AS \"t1\" "
-                +"INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\") AND (\"t2\".\"Name\" IS NOT NULL)"
+                +"INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\" AND \"t2\".\"Name\" IS NOT NULL)"
                 , sql);
         }
 
@@ -511,7 +511,7 @@ namespace DLinqTests
                 .Select((p) => new Person { Name = p.Name, Age = 4 });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT \"t1\".\"Name\" AS \"Name\", @p1 AS \"Age\" FROM \"GetPeople\"(@p0) AS \"t1\" INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\") AND (\"t2\".\"Name\" IS NOT NULL)", sql);
+            Assert.AreEqual("SELECT \"t1\".\"Name\" AS \"Name\", @p1 AS \"Age\" FROM \"GetPeople\"(@p0) AS \"t1\" INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\" AND \"t2\".\"Name\" IS NOT NULL)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual("John", paramDict["p0"]);
@@ -527,7 +527,7 @@ namespace DLinqTests
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM \"GetPeopleByFirstName\"(@p0) AS \"t1\" INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\") AND (\"t2\".\"Name\" IS NOT NULL)", sql);
+            Assert.AreEqual("SELECT * FROM \"GetPeopleByFirstName\"(@p0) AS \"t1\" INNER JOIN \"Pet\" AS \"t2\" ON (\"t1\".\"Id\" = \"t2\".\"OwnerId\" AND \"t2\".\"Name\" IS NOT NULL)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual("John", paramDict["p0"]);
@@ -669,7 +669,7 @@ namespace DLinqTests
                 + "FROM \"Person\" AS \"t1\" "
                 + "INNER JOIN \"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
                 + "INNER JOIN \"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\"\r\n"
-                + "WHERE \"t1\".\"Name\" IS NOT NULL AND ((\"t1\".\"Age\" > @p0) AND (\"t2\".\"Name\" IS NOT NULL)) AND (\"t3\".\"Id\" > @p1)", sql);
+                + "WHERE \"t1\".\"Name\" IS NOT NULL AND (\"t1\".\"Age\" > @p0 AND \"t2\".\"Name\" IS NOT NULL AND \"t3\".\"Id\" > @p1)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -699,7 +699,7 @@ namespace DLinqTests
                 + "FROM \"schema\".\"Person\" AS \"t1\" "
                 + "INNER JOIN \"schema\".\"Pet\" AS \"t2\" ON \"t1\".\"Id\" = \"t2\".\"OwnerId\" "
                 + "INNER JOIN \"schema\".\"Users\" AS \"t3\" ON \"t1\".\"CreatedByUserId\" = \"t3\".\"Id\"\r\n"
-                + "WHERE \"t1\".\"Name\" IS NOT NULL AND ((\"t1\".\"Age\" > @p0) AND (\"t2\".\"Name\" IS NOT NULL)) AND (\"t3\".\"Id\" > @p1)", sql);
+                + "WHERE \"t1\".\"Name\" IS NOT NULL AND (\"t1\".\"Age\" > @p0 AND \"t2\".\"Name\" IS NOT NULL AND \"t3\".\"Id\" > @p1)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);

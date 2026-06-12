@@ -10,10 +10,11 @@ using System.Collections.Generic;
 using Dapper;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Data.Common;
 
 namespace DLinq
 {
-    public class DLinqConnection : IDisposable, IDLinqConnection
+    public class DLinqConnection : DbConnection, IDisposable, IDLinqConnection
     {
         private IDbConnection? _conn;
         private readonly QueryProvider _provider;
@@ -71,14 +72,14 @@ namespace DLinq
         {
             var query = From<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
         public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery sqlQuery)
         {
             var (sql, parameters) = sqlQuery.ToSql();
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
@@ -86,7 +87,7 @@ namespace DLinq
         {
             var query = From<T>().Where(predicate);
             var (sql, parameters) = query.ToSql();
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
@@ -113,7 +114,7 @@ namespace DLinq
         public virtual T? GetById<T>(object keyValues)
         {
             var (sql, parameters) = GetByIdCore<T>(keyValues);
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
             {
@@ -132,7 +133,7 @@ namespace DLinq
         public virtual async Task<T?> GetByIdAsync<T>(object keyValues)
         {
             var (sql, parameters) = GetByIdCore<T>(keyValues);
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
             {
@@ -186,7 +187,7 @@ namespace DLinq
         public virtual T? GetById<T, TKey>(TKey key)
         {
             var (sql, parameters) = GetByIdCore<T, TKey>(key);
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
             {
@@ -204,7 +205,7 @@ namespace DLinq
         public virtual async Task<T?> GetByIdAsync<T, TKey>(TKey key)
         {
             var (sql, parameters) = GetByIdCore<T, TKey>(key);
-            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
             {
@@ -245,7 +246,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToInsertSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -267,7 +268,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToInsertSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -290,7 +291,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToInsertSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -313,7 +314,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToInsertSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -336,7 +337,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToInsertSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<R>(sql, parameters, GetCurrentTransaction()!);
@@ -358,7 +359,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToInsertSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<R>(sql, parameters, GetCurrentTransaction()!);
@@ -381,7 +382,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -403,7 +404,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -426,7 +427,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, wherePredicate, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return _dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!);
@@ -446,7 +447,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -465,7 +466,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -485,7 +486,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -505,7 +506,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
                 {
                     return await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!);
@@ -527,7 +528,6 @@ namespace DLinq
             Open();
             try
             {
-                // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
                 var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}\r\n{JsonSerializer.Serialize(parameters)}");
@@ -547,10 +547,9 @@ namespace DLinq
             Open();
             try
             {
-                // Use SqlQuery<T>.ToDeleteSql to generate SQL and parameters from the predicate
                 var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -568,7 +567,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToDeleteSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -586,7 +585,7 @@ namespace DLinq
             try
             {
                 var (sql, parameters) = From<T>().ToDeleteSql(entity, options);
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -600,7 +599,7 @@ namespace DLinq
             Open();
             try
             {
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -614,7 +613,7 @@ namespace DLinq
             Open();
             try
             {
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -628,7 +627,7 @@ namespace DLinq
             Open();
             try
             {
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return _dapper.ExecuteScalar<T>(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -642,7 +641,7 @@ namespace DLinq
             Open();
             try
             {
-                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}");
+                if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return await _dapper.ExecuteScalarAsync<T>(sql, parameters, GetCurrentTransaction()!);
             }
             finally
@@ -661,6 +660,7 @@ namespace DLinq
             _recursiveCommit = true;
             if (_transaction != null)
             {
+                if (EnableSqlConsoleLogging) Console.WriteLine("Transaction.Commit");
                 _transaction.Commit();
                 _transaction = null;
                 if (_transactionDepth > 0) _transactionDepth--;
@@ -676,6 +676,7 @@ namespace DLinq
         {
             if (_recursiveRollback) return; //protects from possible recursion from Transaction.Rollback calling back
             _recursiveRollback = true;
+            if (EnableSqlConsoleLogging) Console.WriteLine("Transaction.Rollback");
             _transaction!.Rollback();
             _transaction = null;
             _transactionDepth = 0;
@@ -683,12 +684,23 @@ namespace DLinq
         }
 
         // IDbConnection implementation
-        public virtual string ConnectionString { get { return _conn?.ConnectionString!; } set { if (_conn != null) _conn.ConnectionString = value; } }
-        public virtual int ConnectionTimeout => _conn?.ConnectionTimeout ?? 0;
-        public virtual string Database => _conn?.Database!;
-        public virtual ConnectionState State => _conn?.State ?? ConnectionState.Closed;
-        public virtual void ChangeDatabase(string databaseName) => _conn?.ChangeDatabase(databaseName);
-        public virtual void Close()
+        //public virtual string ConnectionString { get { return _conn?.ConnectionString!; } set { if (_conn != null) _conn.ConnectionString = value; } }
+        public new virtual int ConnectionTimeout => _conn?.ConnectionTimeout ?? 0;
+        //public virtual string Database => _conn?.Database!;
+        //public virtual ConnectionState State => _conn?.State ?? ConnectionState.Closed;
+
+        public override string ConnectionString { get { return _conn?.ConnectionString!; } set { if (_conn != null) _conn.ConnectionString = value; } }
+
+        public override string Database => _conn?.Database!;
+
+        public override string DataSource => "";
+
+        public override string ServerVersion => "1.0";
+
+        public override ConnectionState State => _conn?.State ?? ConnectionState.Closed;
+
+        public override void ChangeDatabase(string databaseName) => _conn?.ChangeDatabase(databaseName);
+        public override void Close()
         {
             if (_conn == null) return;
             _conn.Close();
@@ -697,8 +709,8 @@ namespace DLinq
         {
             if (_wasClosed) Close();
         }
-        public virtual IDbCommand CreateCommand() => _conn.CreateCommand();
-        public virtual void Open()
+        public new virtual IDbCommand CreateCommand() => _conn?.CreateCommand()!;
+        public override void Open()
         {
             if (_conn == null) throw new InvalidOperationException("Cannot open a null connection. It may have been disposed.");
             if (_conn.State == ConnectionState.Broken) Close();
@@ -713,22 +725,30 @@ namespace DLinq
         /// </summary>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        public virtual IDbTransaction BeginTransaction()
+        public new virtual IDbTransaction BeginTransaction()
         {
-            Open();
-            if (_conn == null) throw new InvalidOperationException("Cannot begin transaction of a null connection. It may have been disposed.");
-            if (_transaction == null) _transaction = new Transaction(_conn.BeginTransaction(), Commit, Rollback, TransDispose);
-            _transactionDepth++;
-            return _transaction;
+            return BeginTransactionInternal(null);
         }
 
-        //Begins a transaction with specified isolation level. Supports nested transactions by counting depth.
-        public virtual IDbTransaction BeginTransaction(IsolationLevel il)
+        /// <summary>
+        /// Begins a transaction with specified isolation level. Opens the connection if it is not already open. 
+        /// If The connection is opened automaticly by BeginTransaction it is also closed when the transaction is disposed or goes out of scope.
+        /// Supports nested transactions by counting depth.
+        /// </summary>
+        /// <returns></returns>
+        public new virtual IDbTransaction BeginTransaction(IsolationLevel il)
+        {
+            return BeginTransactionInternal(il);
+        }
+
+        internal virtual IDbTransaction BeginTransactionInternal(IsolationLevel? il)
         {
             Open();
             if (_conn == null) throw new InvalidOperationException("Cannot begin transaction of a null connection. It may have been disposed.");
-            if (_transaction == null) _transaction = new Transaction(_conn.BeginTransaction(il), Commit, Rollback, TransDispose);
+            if (_transaction == null) _transaction = il.HasValue ? new Transaction(_conn.BeginTransaction(il.Value), Commit, Rollback, TransDispose)
+                    : new Transaction(_conn.BeginTransaction(), Commit, Rollback, TransDispose);
             _transactionDepth++;
+            if (EnableSqlConsoleLogging) Console.WriteLine($"BeginTransaction (depth={_transactionDepth})");
             return _transaction;
         }
 
@@ -742,12 +762,26 @@ namespace DLinq
             _recursiveDispose = false;
         }
 
-        public virtual void Dispose()
+        public new virtual void Dispose()
         {
             TransDispose();
             Close();
             _conn?.Dispose();
             _conn = null!;
         }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+        {
+            throw new NotImplementedException("Not implemented.Use 'IDbConnection.BeginTransaction' instead");
+        }
+
+        
+
+        protected override DbCommand CreateDbCommand()
+        {
+            throw new NotImplementedException("Not implemented. Use 'IDbConnection.CreateCommand' instead.");
+        }
+
+        
     }
 }

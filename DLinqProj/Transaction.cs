@@ -1,5 +1,6 @@
 using System;
 using System.Data;
+using System.Data.Common;
 
 namespace DLinq
 {
@@ -7,7 +8,7 @@ namespace DLinq
     /// Encapsulates an IDbTransaction instance and implements System.Data.IDbTransaction.
     /// Allows custom commit and rollback delegates to be invoked on transaction actions.
     /// </summary>
-    public class Transaction : IDbTransaction, IDisposable
+    public class Transaction : DbTransaction, IDbTransaction, IDisposable
     {
         private readonly IDbTransaction _innerTransaction;
         private readonly Action? _onCommit;
@@ -24,25 +25,26 @@ namespace DLinq
 
         internal IDbTransaction InnerTransaction => _innerTransaction;
 
-        public void Commit()
+        public override void Commit()
         {
             _innerTransaction.Commit();
             _onCommit?.Invoke();
         }
 
-        public void Rollback()
+        public override void Rollback()
         {
             _innerTransaction.Rollback();
             _onRollback?.Invoke();
         }
 
-        public void Dispose()
+        public new void Dispose()
         {
             _onDispose?.Invoke();
             _innerTransaction.Dispose();
         }
 
-        public IDbConnection Connection => _innerTransaction.Connection;
-        public IsolationLevel IsolationLevel => _innerTransaction.IsolationLevel;
+        public virtual new IDbConnection Connection => _innerTransaction.Connection!;
+        protected override DbConnection DbConnection => throw new NotImplementedException("DbConnection is not implemented. use 'Connection' instead");
+        public override IsolationLevel IsolationLevel => _innerTransaction.IsolationLevel;
     }
 }

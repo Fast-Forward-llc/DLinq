@@ -229,6 +229,8 @@ namespace DLinq
             if (entityType.Name == nameof(ConstantExpression)) return string.Empty;
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
             var tableName = tableAttr?.Name ?? entityType.Name;
+            if (tableAttr?.Schema != null)
+                tableName = $"{tableAttr.Schema}.{tableName}";  
             if (Entity2TableMapper != null) tableName = Entity2TableMapper(entityType, tableName) ?? tableName;
             return tableName;
         }
@@ -324,6 +326,17 @@ namespace DLinq
                         enumType = rightUnary.Operand.Type;
                     }
 
+                    string op = context.dialect.MapExpressionTypeToSqlOperator(binary.NodeType);
+
+                    if (op == "AND" || op == "OR")
+                    {
+                        // Flatten same-operator chains to avoid redundant nested parentheses.
+                        // e.g. C#'s left-associative  (a && b) && c  becomes  (a AND b AND c)
+                        // instead of  ((a AND b) AND c).
+                        var terms = CollectLogicalTerms(binary, binary.NodeType, parameters, context, entityParamNames);
+                        return $"({string.Join($" {op} ", terms)})";
+                    }
+
                     var left = ParsePredicateWithEntityParams(binary.Left, parameters, context, entityParamNames);
                     var right = ParsePredicateWithEntityParams(binary.Right, parameters, context, entityParamNames);
 
@@ -340,10 +353,6 @@ namespace DLinq
                         }
                     }
 
-                    string op = context.dialect.MapExpressionTypeToSqlOperator(binary.NodeType);
-
-                    if (op == "AND" || op == "OR")
-                        return $"({left}) {op} ({right})";
                     return $"{left} {op} {right}";
                 case MemberExpression memberExpr:
                     if (IsEntityMember(memberExpr, entityParamNames))
@@ -412,6 +421,46 @@ namespace DLinq
                         return "NULL";
                     parameters.Add(val);
                     return context.dialect.ParameterPlaceholder(parameters.Count - 1);
+            }
+        }
+
+        /// <summary>
+        /// Recursively collects all leaf SQL fragments for a left-associative logical chain
+        /// (e.g. <c>(a &amp;&amp; b) &amp;&amp; c</c>) that shares the same root operator, so the caller
+        /// can join them with a single pair of outer parentheses instead of nesting them.
+        /// When the operator differs (e.g. mixing AND and OR), the sub-expression is treated
+        /// as an opaque fragment and is NOT flattened further.
+        /// </summary>
+        private List<string> CollectLogicalTerms(
+            BinaryExpression binary,
+            ExpressionType rootNodeType,
+            List<object> parameters,
+            TranslateContext context,
+            HashSet<string> entityParamNames)
+        {
+            var terms = new List<string>();
+            CollectLogicalTermsInto(binary, rootNodeType, parameters, context, entityParamNames, terms);
+            return terms;
+        }
+
+        private void CollectLogicalTermsInto(
+            Expression expr,
+            ExpressionType rootNodeType,
+            List<object> parameters,
+            TranslateContext context,
+            HashSet<string> entityParamNames,
+            List<string> terms)
+        {
+            if (expr is BinaryExpression bin && bin.NodeType == rootNodeType)
+            {
+                // Same operator — recurse into both sides to keep flattening
+                CollectLogicalTermsInto(bin.Left, rootNodeType, parameters, context, entityParamNames, terms);
+                CollectLogicalTermsInto(bin.Right, rootNodeType, parameters, context, entityParamNames, terms);
+            }
+            else
+            {
+                // Different operator or leaf — translate as a normal sub-predicate
+                terms.Add(ParsePredicateWithEntityParams(expr, parameters, context, entityParamNames));
             }
         }
 

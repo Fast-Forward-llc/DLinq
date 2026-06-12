@@ -22,6 +22,16 @@ namespace DLinqTests
             public int Age { get; set; }
         }
 
+        [Table("Person", Schema ="xyz")]
+        private class Person3
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public int Age { get; set; }
+        }
+
         private class Pet
         {
             [Key]
@@ -29,6 +39,11 @@ namespace DLinqTests
             public int Id { get; set; }
             public int OwnerId { get; set; }
             public string Name { get; set; }
+        }
+
+        [Table("Pet", Schema ="zz1")]
+        private class Pet2 : Pet
+        {
         }
 
         private class PersonPet
@@ -99,7 +114,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider).Where(x => x.Age > minAge && x.Name != null && x.Age < maxAge);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE (([t1].[Age] > @p0) AND ([t1].[Name] IS NOT NULL)) AND ([t1].[Age] < @p1)", sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE ([t1].[Age] > @p0 AND [t1].[Name] IS NOT NULL AND [t1].[Age] < @p1)", sql);
             Assert.AreEqual(2, ((IDictionary<string, object>)parameters).Count);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -114,7 +129,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider).Where(x => x.Age > ageLimits.Min && x.Name != null && x.Age < ageLimits.Max);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE (([t1].[Age] > @p0) AND ([t1].[Name] IS NOT NULL)) AND ([t1].[Age] < @p1)", sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE ([t1].[Age] > @p0 AND [t1].[Name] IS NOT NULL AND [t1].[Age] < @p1)", sql);
             Assert.AreEqual(2, ((IDictionary<string, object>)parameters).Count);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -173,6 +188,16 @@ namespace DLinqTests
             var (sql, parameters) = query.ToInsertSql(new { Name = "Test", Age = 20 });
             Console.WriteLine(sql);
             Assert.AreEqual("INSERT INTO [Person] ([Name], [Age]) VALUES (@Name, @Age)",sql);
+        }
+
+        [TestMethod]
+        public void ToInsertSql_TableAttr_Schema()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person3>(provider);
+            var (sql, parameters) = query.ToInsertSql(new { Name = "Test", Age = 20 });
+            Console.WriteLine(sql);
+            Assert.AreEqual("INSERT INTO [xyz].[Person] ([Name], [Age]) VALUES (@Name, @Age)", sql);
         }
 
         [TestMethod]
@@ -377,18 +402,18 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Join_WithMultipleConditions()
+        public void Join_WithMultipleConditions_TableAttr_Schema()
         {
             var provider = GetProvider();
-            var query = new SqlQuery<Person>(provider)
+            var query = new SqlQuery<Person3>(provider)
                 .Where(person => person.Age > 18)
-                .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
-                .Select<Person, Pet>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
+                .Join<Pet2>((person, pet) => person.Id == pet.OwnerId && pet.Name != null)
+                .Select<Person3, Pet2>((p, pt) => new { PersonName = p.Name, PetName = pt.Name });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual(
-                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1] "
-                + "INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)\r\n"
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [xyz].[Person] AS [t1] "
+                + "INNER JOIN [zz1].[Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId] AND [t2].[Name] IS NOT NULL)\r\n"
                 + "WHERE [t1].[Age] > @p0"
                 , sql);
             Assert.IsTrue(sql.Contains("ON"));
@@ -409,7 +434,7 @@ namespace DLinqTests
             Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
             Assert.AreEqual(
                 "SELECT [t2].[Name] AS [Name], @p1 AS [Breed], @p2 AS [Age], @p3 AS [DOB] FROM [Person] AS [t1] "
-                + "INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)\r\n"
+                + "INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId] AND [t2].[Name] IS NOT NULL)\r\n"
                 + "WHERE [t1].[Age] > @p0"
                 , sql);
         }
@@ -441,7 +466,7 @@ namespace DLinqTests
             Assert.AreEqual(
                 "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName] FROM [Person] AS [t1] "
                 + "INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId]\r\n"
-                + "WHERE ([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)"
+                + "WHERE ([t1].[Age] > @p0 AND [t2].[Name] IS NOT NULL)"
                 , sql);
         }
 
@@ -614,7 +639,7 @@ namespace DLinqTests
             var query = new SqlQuery<Person>(provider).Where(x => x.Name.StartsWith("John") && x.Age > 18);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE ([t1].[Name] LIKE @p0) AND ([t1].[Age] > @p1)", sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE ([t1].[Name] LIKE @p0 AND [t1].[Age] > @p1)", sql);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual("John%", paramDict["p0"]);
             Assert.AreEqual(18, paramDict["p1"]);
@@ -661,7 +686,7 @@ namespace DLinqTests
                 .Select((p) => new Person { Name = p.Name, Age = 4 });
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT [t1].[Name] AS [Name], @p1 AS [Age] FROM [GetPeople](@p0) AS [t1] INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)",sql);
+            Assert.AreEqual("SELECT [t1].[Name] AS [Name], @p1 AS [Age] FROM [GetPeople](@p0) AS [t1] INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId] AND [t2].[Name] IS NOT NULL)",sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual("John", paramDict["p0"]);
@@ -677,7 +702,7 @@ namespace DLinqTests
                 .Join<Pet>((person, pet) => person.Id == pet.OwnerId && pet.Name != null);
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
-            Assert.AreEqual("SELECT * FROM [GetPeopleByFirstName](@p0) AS [t1] INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId]) AND ([t2].[Name] IS NOT NULL)", sql);
+            Assert.AreEqual("SELECT * FROM [GetPeopleByFirstName](@p0) AS [t1] INNER JOIN [Pet] AS [t2] ON ([t1].[Id] = [t2].[OwnerId] AND [t2].[Name] IS NOT NULL)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual("John", paramDict["p0"]);
@@ -733,6 +758,21 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_MultiAndWhere_CombinesWithAndOperator()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .AndWhere(x => x.Name == "John" && x.Name != "Paul" && x.Id > 0);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM [Person] AS [t1]\r\nWHERE [t1].[Age] > @p0 AND ([t1].[Name] = @p1 AND [t1].[Name] <> @p2 AND [t1].[Id] > @p3)", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual("John", paramDict["p1"]);
+        }
+
+        [TestMethod]
         public void Where_OrWhere_CombinesWithOrOperator()
         {
             var provider = GetProvider();
@@ -748,7 +788,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void Where_AndWhere_OrWhere_CombinesInOrder()
+        public void Where_AndWhere_OrWhere_CombinesInOrder_ChainedSingularPredicates()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
@@ -765,7 +805,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void AndWhere_ChainedMultiple_CombinesAllWithAnd()
+        public void AndWhere_ChainedMultiple_CombinesAllWithAnd_ChainedSingularPredicates()
         {
             var provider = GetProvider();
             var query = new SqlQuery<Person>(provider)
@@ -819,7 +859,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void AndWhere_TwoJoins_ReferencingAllThreeEntities()
+        public void AndWhere_TwoJoins_ReferencingAllThreeEntities_CompoundPredicat()
         {
             var provider = GetProvider();
             var query = new SqlQuery<PersonWithUser>(provider)
@@ -837,7 +877,7 @@ namespace DLinqTests
                 + "FROM [PersonWithUser] AS [t1] "
                 + "INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
                 + "INNER JOIN [Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
-                + "WHERE [t1].[Name] IS NOT NULL AND (([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)) AND ([t3].[Id] > @p1)", sql);
+                + "WHERE [t1].[Name] IS NOT NULL AND ([t1].[Age] > @p0 AND [t2].[Name] IS NOT NULL AND [t3].[Id] > @p1)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -845,7 +885,7 @@ namespace DLinqTests
         }
 
         [TestMethod]
-        public void AndWhere_TwoJoins_ThreeEntities_CustomMapping()
+        public void AndWhere_TwoJoins_ThreeEntities_CustomMapping_CompoundPredicate()
         {
             var provider = GetProvider();
             provider.Translator.Entity2TableMapper = (entityType, tableName) =>
@@ -867,7 +907,7 @@ namespace DLinqTests
                 + "FROM [schema].[PersonWithUser] AS [t1] "
                 + "INNER JOIN [schema].[Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
                 + "INNER JOIN [schema].[Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
-                + "WHERE [t1].[Name] IS NOT NULL AND (([t1].[Age] > @p0) AND ([t2].[Name] IS NOT NULL)) AND ([t3].[Id] > @p1)", sql);
+                + "WHERE [t1].[Name] IS NOT NULL AND ([t1].[Age] > @p0 AND [t2].[Name] IS NOT NULL AND [t3].[Id] > @p1)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;
             Assert.AreEqual(18, paramDict["p0"]);
@@ -894,12 +934,44 @@ namespace DLinqTests
             Assert.AreEqual("Charlie", paramDict["p2"]);
         }
 
+        [TestMethod]
+        public void OrWhere_TwoJoins_BuildCompoundPredicate_Externally()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<PersonWithUser>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<AppUser>((person, user) => person.UserId == user.Id)
+                .Select<PersonWithUser, Pet, AppUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            SqlQueryTests_BuildPredicate2(query);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName], [t3].[Name] AS [UserName] FROM [PersonWithUser] AS [t1] INNER JOIN [Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] INNER JOIN [Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\nWHERE ([t1].[Name] = @p0 AND [t1].[Id] > @p1) OR ([t1].[Name] = @p2 AND [t1].[Id] > @p3) OR ([t1].[Name] = @p4 AND [t1].[Id] > @p5)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Alice", paramDict["p0"]);
+            Assert.AreEqual(3, paramDict["p1"]);
+            Assert.AreEqual("Bob", paramDict["p2"]);
+            Assert.AreEqual(3, paramDict["p3"]);
+            Assert.AreEqual("Charlie", paramDict["p4"]);
+            Assert.AreEqual(3, paramDict["p5"]);
+        }
+
         protected void SqlQueryTests_BuildPredicate(SqlQuery<PersonWithUser> query)
         {
             var names = new List<string>() { "Alice", "Bob", "Charlie" };
             foreach (var name in names)
             {
                 query.OrWhere(x => x.Name == name);
+            }
+        }
+
+        protected void SqlQueryTests_BuildPredicate2(SqlQuery<PersonWithUser> query)
+        {
+            var names = new List<string>() { "Alice", "Bob", "Charlie" };
+            foreach (var name in names)
+            {
+                query.OrWhere(x => x.Name == name && x.Id > 3);
             }
         }
 
