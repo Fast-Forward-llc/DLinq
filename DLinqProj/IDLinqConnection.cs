@@ -5,23 +5,13 @@ namespace DLinq
 {
     public interface IDLinqConnection : IDbConnection
     {
-        string ConnectionString { get; set; }
-        int ConnectionTimeout { get; }
-        string Database { get; }
-        ConnectionState State { get; }
         int TransactionDepth { get; }
 
-        IDbTransaction BeginTransaction();
-        IDbTransaction BeginTransaction(IsolationLevel il);
-        void ChangeDatabase(string databaseName);
-        void Close();
         void Commit();
-        IDbCommand CreateCommand();
         int Delete<T>(Expression<Func<T, bool>> predicate, TableOptions? options = null);
         int Delete<T>(T entity, TableOptions? options = null);
         Task<int> DeleteAsync<T>(Expression<Func<T, bool>> predicate, TableOptions? options = null);
         Task<int> DeleteAsync<T>(T entity, TableOptions? options = null);
-        void Dispose();
         T? GetById<T, TKey>(TKey key, QueryOptions? options = null);
         T? GetById<T>(object keyValues, QueryOptions? options = null);
         Task<T?> GetByIdAsync<T, TKey>(TKey key, QueryOptions? options = null);
@@ -32,7 +22,6 @@ namespace DLinq
         Task<R?> InsertAsync<T, R>(object entity, InsertOptions? options = null);
         Task<T?> InsertAsync<T>(object entity, InsertOptions? options = null);
         Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null);
-        void Open();
         SqlQuery<T> QueryBuilder<T>();
         IEnumerable<T> Query<T>(SqlTextExpression sqlQuery);
         IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null);

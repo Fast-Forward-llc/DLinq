@@ -898,7 +898,7 @@ namespace DLinq
             var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var columns = new List<string>();
             var paramNames = new List<string>();
-            var paramDict = new Dictionary<string, object>();
+            var paramDict = new Dictionary<string, object?>();
             var keyInfo = new List<(string colName, object? value, bool isIdentity)>();
             foreach (var prop in properties)
             {
@@ -951,9 +951,9 @@ namespace DLinq
             var tableName = options.TableName ?? GetEntityTableName(tableType, options);
             var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
-            var setDict = new Dictionary<string, object>();
-            var primaryKeys = new List<(string colName, object value)>();
-            var whereParams = new List<object>();
+            var setDict = new Dictionary<string, object?>();
+            var primaryKeys = new List<(string colName, object? value)>();
+            var whereParams = new List<object?>();
 
             foreach (var prop in properties)
             {
@@ -1025,8 +1025,8 @@ namespace DLinq
             var tableName = options.TableName ?? GetEntityTableName(tableType, options);
             var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
-            var setDict = new Dictionary<string, object>();
-            var primaryKeys = new List<(string colName, object value)>();
+            var setDict = new Dictionary<string, object?>();
+            var primaryKeys = new List<(string colName, object? value)>();
 
             foreach (var prop in properties)
             {
@@ -1124,7 +1124,7 @@ namespace DLinq
             var sql = _dialect.DeleteStatement(tableName, new { }); // pass empty object or null
             if (!string.IsNullOrWhiteSpace(whereSql)) sql += whereSql;
             var paramObj = ToAnonymousObject(parameters
-                .Select((v, i) => new KeyValuePair<string, object>(_dialect.ParameterPlaceholder(i), v))
+                .Select((v, i) => new KeyValuePair<string, object?>(_dialect.ParameterPlaceholder(i), v))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
             return (sql, paramObj);
         }
@@ -1152,10 +1152,10 @@ namespace DLinq
         /// </summary>
         /// <param name="dict">Dictionary of parameter names and values.</param>
         /// <returns>Anonymous object with properties matching dictionary keys.</returns>
-        public static object ToAnonymousObject(Dictionary<string, object> dict)
+        public static object ToAnonymousObject(Dictionary<string, object?> dict)
         {
             var obj = new ExpandoObject();
-            var objDict = (IDictionary<string, object>)obj;
+            var objDict = (IDictionary<string, object?>)obj;
             foreach (var kvp in dict)
                 objDict[kvp.Key] = kvp.Value;
             return obj;
@@ -1189,7 +1189,7 @@ namespace DLinq
             var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var columns = new List<string>();
             var paramNames = new List<string>();
-            var paramDict = new Dictionary<string, object>();
+            var paramDict = new Dictionary<string, object?>();
             var keyInfo = new List<(string colName, object? value, bool isIdentity)>();
 
             foreach (var prop in properties)
