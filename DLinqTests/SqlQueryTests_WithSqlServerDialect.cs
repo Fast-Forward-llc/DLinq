@@ -283,6 +283,96 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void ToInsertSql_GeneratesFullSql_DefaultSchema()
+        {
+            var query = new SqlQuery<TestEntity>(GetProvider());
+            var (sql, parameters) = query.ToInsertSql(new TestEntity { Id = 1, Name = "abc" }, new InsertOptions { DefaultSchema = "schema" });
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "INSERT INTO [schema].[DummyTable]");
+            StringAssert.Contains(sql, "[Id]");
+            StringAssert.Contains(sql, "[Name]");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToInsertSql_GeneratesFullSql_WithSchema()
+        {
+            var query = new SqlQuery<TestEntity2>(GetProvider());
+            var (sql, parameters) = query.ToInsertSql(new TestEntity2 { Id = 1, Name = "abc" });
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "INSERT INTO [dbo].[DummyTable]");
+            StringAssert.Contains(sql, "[Id]");
+            StringAssert.Contains(sql, "[Name]");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToInsertSql_GeneratesFullSql_OverrideSchema()
+        {
+            var query = new SqlQuery<TestEntity2>(GetProvider());
+            var (sql, parameters) = query.ToInsertSql(new TestEntity2 { Id = 1, Name = "abc" }, new InsertOptions { Schema = "abc" });
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "INSERT INTO [abc].[DummyTable]");
+            StringAssert.Contains(sql, "[Id]");
+            StringAssert.Contains(sql, "[Name]");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@Id"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_GeneratesFullSql_DefaultSchema()
+        {
+            var query = new SqlQuery<TestEntity>(GetProvider());
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity { Id = 1, Name = "abc" }, new UpdateOptions() { DefaultSchema = "abc"});
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "UPDATE [abc].[DummyTable]");
+            StringAssert.Contains(sql, "SET [Name] = @Name");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_GeneratesFullSql_WithSchema()
+        {
+            var query = new SqlQuery<TestEntity2>(GetProvider());
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity2 { Id = 1, Name = "abc" }, new UpdateOptions() { DefaultSchema = "abc" });
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "UPDATE [dbo].[DummyTable]");
+            StringAssert.Contains(sql, "SET [Name] = @Name");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
+        public void ToUpdateSql_GeneratesFullSql_OverrideSchema()
+        {
+            var query = new SqlQuery<TestEntity2>(GetProvider());
+            var (sql, parameters) = query.ToUpdateSql(new TestEntity2 { Id = 1, Name = "abc" }, new UpdateOptions() { Schema = "abc" });
+            Console.WriteLine($"SQL: {sql} \r\nParameters: {JsonSerializer.Serialize(parameters)}");
+            StringAssert.Contains(sql, "UPDATE [abc].[DummyTable]");
+            StringAssert.Contains(sql, "SET [Name] = @Name");
+            StringAssert.Contains(sql, "WHERE [Id] = @p0");
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(1, paramDict["@p0"]);
+            Assert.AreEqual("abc", paramDict["@Name"]);
+        }
+
+        [TestMethod]
         public void ToUpdateSql_GeneratesFullSql()
         {
             var query = new SqlQuery<TestEntity>(GetProvider());
@@ -716,6 +806,14 @@ namespace DLinqTests
             public string Name { get; set; }
         }
 
+        [Table("DummyTable", Schema ="dbo")]
+        private class TestEntity2
+        {
+            [Key]
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
         [TestMethod]
         public void AndWhere_WithoutBaseWhere_GeneratesSingleWhereClause()
         {
@@ -848,6 +946,15 @@ namespace DLinqTests
             public string Name { get; set; }
         }
 
+        [Table("Users", Schema ="dbo")]
+        private class DboAppUser
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
         protected class PersonWithUser
         {
             [Key]
@@ -907,6 +1014,60 @@ namespace DLinqTests
                 + "FROM [schema].[PersonWithUser] AS [t1] "
                 + "INNER JOIN [schema].[Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
                 + "INNER JOIN [schema].[Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
+                + "WHERE [t1].[Name] IS NOT NULL AND ([t1].[Age] > @p0 AND [t2].[Name] IS NOT NULL AND [t3].[Id] > @p1)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(0, paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void AndWhere_TwoJoins_ThreeEntities_OverrideSchema_CompoundPredicate()
+        {
+            var provider = GetProvider();
+            
+            var query = new SqlQuery<PersonWithUser>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<AppUser>((person, user) => person.UserId == user.Id)
+                .Where(person => person.Name != null)
+                .AndWhere<Pet, AppUser>((person, pet, user) =>
+                    person.Age > 18 && pet.Name != null && user.Id > 0)
+                .Select<PersonWithUser, Pet, AppUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            var (sql, parameters) = query.ToSql(new QueryOptions { Schema = "xyz" });
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName], [t3].[Name] AS [UserName] "
+                + "FROM [xyz].[PersonWithUser] AS [t1] "
+                + "INNER JOIN [xyz].[Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
+                + "INNER JOIN [xyz].[Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
+                + "WHERE [t1].[Name] IS NOT NULL AND ([t1].[Age] > @p0 AND [t2].[Name] IS NOT NULL AND [t3].[Id] > @p1)", sql);
+            Assert.IsTrue(parameters is ExpandoObject);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(0, paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void AndWhere_TwoJoins_ThreeEntities_DefaultSchema_CompoundPredicate()
+        {
+            var provider = GetProvider();
+
+            var query = new SqlQuery<PersonWithUser>(provider)
+                .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+                .Join<DboAppUser>((person, user) => person.UserId == user.Id)
+                .Where(person => person.Name != null)
+                .AndWhere<Pet, DboAppUser>((person, pet, user) =>
+                    person.Age > 18 && pet.Name != null && user.Id > 0)
+                .Select<PersonWithUser, Pet, DboAppUser>((p, pt, u) =>
+                    new { PersonName = p.Name, PetName = pt.Name, UserName = u.Name });
+            var (sql, parameters) = query.ToSql(new QueryOptions { DefaultSchema = "abc" });
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[Name] AS [PersonName], [t2].[Name] AS [PetName], [t3].[Name] AS [UserName] "
+                + "FROM [abc].[PersonWithUser] AS [t1] "
+                + "INNER JOIN [abc].[Pet] AS [t2] ON [t1].[Id] = [t2].[OwnerId] "
+                + "INNER JOIN [dbo].[Users] AS [t3] ON [t1].[UserId] = [t3].[Id]\r\n"
                 + "WHERE [t1].[Name] IS NOT NULL AND ([t1].[Age] > @p0 AND [t2].[Name] IS NOT NULL AND [t3].[Id] > @p1)", sql);
             Assert.IsTrue(parameters is ExpandoObject);
             var paramDict = (IDictionary<string, object>)parameters;

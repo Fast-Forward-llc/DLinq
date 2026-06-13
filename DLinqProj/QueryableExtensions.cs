@@ -7,11 +7,11 @@ namespace DLinq
 {
     public static class SqlQueryExtensions
     {
-        public static (string sql, object parameters) ToSql(this SqlQuery queryable)
+        public static (string sql, object parameters) ToSql(this SqlQuery queryable, QueryOptions? options = null)
         {
             if (queryable.Provider is QueryProvider provider)
             {
-                var sql = provider.Translator.Translate(queryable.selectNode, out var parameters);
+                var sql = provider.Translator.Translate(queryable.selectNode, out var parameters, options);
                 var dict = new Dictionary<string, object>();
                 for (int i = 0; i < parameters.Count; i++)
                 {

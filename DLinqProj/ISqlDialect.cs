@@ -22,5 +22,8 @@ namespace DLinq
         string MapExpressionTypeToSqlOperator(ExpressionType expressionType);
 
         public IFormatProvider SqlFormatter { get; }
+        public (string? Schema, string Table) ParseTableName(string tableName);
+
+
     }
 }

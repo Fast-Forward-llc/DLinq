@@ -131,6 +131,13 @@ var (sql, parameters) = query.ToSql();
 - `sql` is the generated SQL statement.
 - `parameters` is an object suitable for Dapper parameterization.
 
+Pass a `QueryOptions` instance to control schema resolution at generation time:
+```
+var options = new QueryOptions { Schema = "reporting" };
+var (sql, parameters) = query.ToSql(options);
+// Table references in sql use the "reporting" schema
+```
+
 ## Dynamic Predicate Generation
 `SqlQuery.BuildPredicate()` is a static utility for dynamically building a boolean predicate expression from an array of `FilterCriteria` objects and a boolean operator ("AND" or "OR").
 
@@ -187,6 +194,34 @@ var (deleteSql2, deleteParams2) = query.ToDeleteSql(new Person { Id = 1 });
 ```
 - These methods generate SQL for insert, update, and delete operations.
 - Supports advanced predicates for WHERE clause and key-based deletes.
+
+### Schema control on mutation operations
+Pass `InsertOptions` or `UpdateOptions` to apply schema resolution. Both inherit from `QueryOptions` and expose `Schema` and `DefaultSchema`:
+
+| Option | Effect |
+|---|---|
+| `Schema` | Unconditionally replaces the schema in the resolved table name. |
+| `DefaultSchema` | Applies a schema only when the table name has no schema component. |
+
+```
+// Force a specific schema
+var (sql, p) = query.ToInsertSql(
+    new Person { Name = "Alice", Age = 30 },
+    new InsertOptions { Schema = "staging" });
+// INSERT INTO "staging"."Person" (...) VALUES (...)
+
+// Apply a default schema only if Person has no schema in its mapping
+var (sql2, p2) = query.ToInsertSql(
+    new Person { Name = "Bob", Age = 25 },
+    new InsertOptions { DefaultSchema = "app" });
+// INSERT INTO "app"."Person" (...) VALUES (...)
+
+// Schema override on update
+var (sql3, p3) = query.ToUpdateSql(
+    new Person { Id = 1, Name = "Carol" },
+    new UpdateOptions { Schema = "audit", SelectAfterMutation = true });
+// UPDATE "audit"."Person" SET ... RETURNING *;
+```
 
 ## Example Usage
 ```

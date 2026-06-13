@@ -28,6 +28,53 @@ namespace DLinq
             return formatted;
         }
 
+        public (string? Schema, string Table) ParseTableName(string tableName)
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                return (null, tableName);
+
+            int dotIndex = -1;
+            bool inBrackets = false;
+            for (int i = 0; i < tableName.Length; i++)
+            {
+                char c = tableName[i];
+                if (inBrackets)
+                {
+                    if (c == ']')
+                    {
+                        if (i + 1 < tableName.Length && tableName[i + 1] == ']')
+                            i++; // skip escaped ]]
+                        else
+                            inBrackets = false;
+                    }
+                }
+                else
+                {
+                    if (c == '[')
+                        inBrackets = true;
+                    else if (c == '.')
+                    {
+                        dotIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (dotIndex == -1)
+                return (null, UnquoteSqlServerPart(tableName));
+
+            return (UnquoteSqlServerPart(tableName.Substring(0, dotIndex)),
+                    UnquoteSqlServerPart(tableName.Substring(dotIndex + 1)));
+        }
+
+        private static string UnquoteSqlServerPart(string part)
+        {
+            if (string.IsNullOrEmpty(part)) return part;
+            if (part.StartsWith("[") && part.EndsWith("]") && part.Length >= 2)
+                return part.Substring(1, part.Length - 2).Replace("]]", "]");
+            return part;
+        }
+
         public string FormatColumn(string columnName, string? tableName = null, bool isLiteralValue = false)
         {
             if (string.IsNullOrEmpty(columnName)) return columnName;

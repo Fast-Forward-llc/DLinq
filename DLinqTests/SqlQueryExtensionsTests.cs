@@ -21,6 +21,9 @@ namespace DLinqTests
             public System.Linq.Expressions.Expression Expression => System.Linq.Expressions.Expression.Constant(this);
             public new IQueryProvider Provider => new DummyProvider();
             public System.Collections.IEnumerator GetEnumerator() => throw new NotImplementedException();
+
+            public override SqlQuery Take(int count) => throw new NotImplementedException();
+            
         }
         private class DummyProvider : IQueryProvider
         {

@@ -23,35 +23,82 @@ Executes a SqlQuery expression based on type T and returns results using Dapper.
 
 ### Get by Single Key
 ```csharp
-T? GetById<T, TKey>(TKey key)
+T? GetById<T, TKey>(TKey key, QueryOptions? options = null)
 ```
-Retrieves an entity by its single key property.
+Retrieves an entity by its single key property. Pass `QueryOptions` to control schema resolution.
 
 ### Get by Composite Key
 ```csharp
-T? GetById<T>(object keyValues)
+T? GetById<T>(object keyValues, QueryOptions? options = null)
 ```
-Retrieves an entity by composite key. Pass an anonymous object with properties matching the key fields.
+Retrieves an entity by composite key. Pass an anonymous object with properties matching the key fields. Pass `QueryOptions` to control schema resolution.
 
 ### Insert
 ```csharp
-T? Insert<T>(T entity, Options? options = null)
+T? Insert<T>(T entity, InsertOptions? options = null)
 ```
 Inserts an entity. If `options.SelectAfterMutation` is true, returns the inserted entity.
 
 ### Update
 ```csharp
-T? Update<T>(T entity, Options? options = null)
-T? Update<T>(T entity, Expression<Func<T, bool>> predicate, Options? options = null)
+T? Update<T>(T entity, UpdateOptions? options = null)
+T? Update<T>(T entity, Expression<Func<T, bool>> predicate, UpdateOptions? options = null)
 ```
 Updates an entity. If `options.SelectAfterMutation` is true, returns the updated entity.
 
 ### Delete
 ```csharp
-int Delete<T>(Expression<Func<T, bool>> predicate, Options? options = null)
-int Delete<T>(T entity, Options? options = null)
+int Delete<T>(Expression<Func<T, bool>> predicate)
+int Delete<T>(T entity)
 ```
 Deletes entities matching the predicate or by key fields of the entity instance.
+
+## Schema Control with QueryOptions, InsertOptions, and UpdateOptions
+
+`QueryOptions` is the base class for all operation options and provides two properties for controlling the database schema used in generated SQL:
+
+| Property | Type | Description |
+|---|---|---|
+| `Schema` | `string?` | **Overrides** the schema for the table in all cases, including when the table name already contains a schema. |
+| `DefaultSchema` | `string?` | Applies the schema **only when** the table name does not already include one. Has no effect if a schema is already present. |
+
+`InsertOptions` and `UpdateOptions` both inherit from `QueryOptions` and add:
+
+| Property | Type | Description |
+|---|---|---|
+| `SelectAfterMutation` | `bool` | When `true`, executes a `SELECT` after the mutation and returns the affected row. |
+| `TableName` | `string?` | Overrides the table name derived from the entity type or `[Table]` attribute. |
+
+### Schema override — `QueryOptions.Schema`
+`Schema` unconditionally replaces any schema present in the resolved table name. Use this when you need to target a specific schema regardless of how the entity is mapped.
+
+```csharp
+// Always queries from the "reporting" schema, even if Person is mapped to "dbo.Person"
+var person = dlinq.GetById<Person, int>(42, new QueryOptions { Schema = "reporting" });
+// SELECT ... FROM "reporting"."Person" WHERE ...
+```
+
+### Default schema — `QueryOptions.DefaultSchema`
+`DefaultSchema` is applied only when the table name has no schema component. Use this as a fallback schema when entities are not explicitly schema-qualified.
+
+```csharp
+// Applies "app" schema only because Person has no schema in its mapping
+var inserted = dlinq.Insert(new Person { Name = "Alice" },
+    new InsertOptions { DefaultSchema = "app", SelectAfterMutation = true });
+// INSERT INTO "app"."Person" (...) VALUES (...) RETURNING *;
+
+// Schema is NOT changed here because "dbo.Person" already has a schema
+var updated = dlinq.Update(new Person { Id = 1, Name = "Bob" },
+    new UpdateOptions { DefaultSchema = "app", SelectAfterMutation = true });
+// UPDATE "dbo"."Person" SET ... (DefaultSchema ignored — schema already present)
+```
+
+### Combining Schema and SelectAfterMutation
+```csharp
+var options = new InsertOptions { Schema = "staging", SelectAfterMutation = true };
+var result = dlinq.Insert(new Person { Name = "Carol" }, options);
+// INSERT INTO "staging"."Person" (...) VALUES (...) RETURNING *;
+```
 
 ## Transaction Management
 ```csharp
@@ -176,11 +223,40 @@ Generates SQL from the composed query and executes it using Dapper.
 
 ---
 
+## Entity2TableMapper
+
+`Entity2TableMapper` is a settable property on `DLinqConnection` that allows custom mapping of entity types to table names at runtime. Assign a function to override the default table name resolution for any entity type.
+
+```csharp
+Func<Type, string, string>? Entity2TableMapper { get; set; }
+```
+
+- **P1** (`Type`): The entity type being resolved.
+- **P2** (`string`): The table name already resolved from the `[Table]` attribute or entity class name, including any schema if present.
+- **Returns** (`string`): Your custom table name. Return `null` to fall back to the input table name.
+
+The mapper runs before `Schema` / `DefaultSchema` options are applied, so schema options still take effect after custom mapping.
+
+### Example
+```csharp
+var dlinq = new DLinqConnection(connection, new PostgresDialect());
+
+// Redirect all queries for Person to a tenant-specific table
+dlinq.Entity2TableMapper = (type, tableName) =>
+    type == typeof(Person) ? "tenant_42.people" : null;
+
+// Generates: SELECT ... FROM "tenant_42"."people" WHERE ...
+var results = dlinq.Query<Person>(x => x.Age > 18).ToList();
+```
+
+---
+
 **Notes:**
 - The `Delete` and `Update` methods support advanced predicates and key-based operations to avoid accidental full-table changes.
 - SQL generation and mutation features are consistent across SQL Server and PostgreSQL dialects.
-- The `Options` type allows specifying table name and mutation behavior.
-- Transaction management is built-in.
-- Unit testing is supported via dependency injection and mocking.
+- `InsertOptions` / `UpdateOptions` allow specifying table name, schema, and mutation return behavior.
+- `QueryOptions.Schema` overrides the schema unconditionally; `QueryOptions.DefaultSchema` applies only when no schema is already present.
+- Transaction management is built-in and implicit — all operations on the connection automatically participate in the active transaction.
+- Unit testing is supported via dependency injection and mocking of `IDapperProvider`.
 
 For more details, see the source code and unit tests in the repository.

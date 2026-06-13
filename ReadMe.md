@@ -12,6 +12,7 @@ If your looking for a library that feels more like Sql and less like defining DD
 - **LINQ-Style Fluent SQL Generation:** Write expressive queries using LINQ style syntax and generate efficient SQL for your database.
 - **Mutation Operations:** Easily perform insert, update, and delete operations with automatic SQL generation and parameterization.
 - **Advanced Predicate Support:** Use complex predicates reducing boilerplate and risk of full-table changes.
+- **Schema Control:** Use `QueryOptions.Schema` to unconditionally override the schema for any operation, or `QueryOptions.DefaultSchema` to apply a fallback schema only when the entity has no schema defined. Available on all query and mutation operations.
 - **Transaction Management:** Implicit transactions. When a transaction is started, all operations using that connection are automatically included in the transaction. No need to pass around transactions or keep track of them.
 - **Dapper Integration:** Seamless integration with Dapper for fast data access and mapping.
 - **Attribute Based Mapping:** Use attributes to configure table and column mappings, key properties, and more.
@@ -43,7 +44,7 @@ var query = dlinq.From<Person>().OrderBy(x => x.Age).Skip(2).Take(5)
 var results = dlinq.Query<Employee>(query).ToList();
 
 // Insert
-var inserted = dlinq.Insert(new Person { Name = "Alice", Age = 30 }, new Options { SelectAfterMutation = true });
+var inserted = dlinq.Insert(new Person { Name = "Alice", Age = 30 }, new InsertOptions { SelectAfterMutation = true });
 
 // Update with predicate
 var updated = dlinq.Update(new Person { Age = 21 }, p => p.Age > 18);

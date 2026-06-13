@@ -223,7 +223,7 @@ namespace DLinq
             }
         }
 
-        internal string GetEntityTableName(Type entityType)
+        internal string GetEntityTableName(Type entityType, QueryOptions? options = null)
         {
             if (entityType == null) return string.Empty;
             if (entityType.Name == nameof(ConstantExpression)) return string.Empty;
@@ -232,6 +232,11 @@ namespace DLinq
             if (tableAttr?.Schema != null)
                 tableName = $"{tableAttr.Schema}.{tableName}";  
             if (Entity2TableMapper != null) tableName = Entity2TableMapper(entityType, tableName) ?? tableName;
+            //table name might include a schema and schema or table name might be quoted in dialect specific notation
+            var (schema, table) = _dialect.ParseTableName(tableName);
+            if (options != null && !string.IsNullOrWhiteSpace(options.Schema)) return $"{options.Schema}.{table}";
+            if (options != null && string.IsNullOrWhiteSpace(schema) && !string.IsNullOrWhiteSpace(options.DefaultSchema)) return $"{options.DefaultSchema}.{table}";
+
             return tableName;
         }
 
@@ -485,7 +490,7 @@ namespace DLinq
             var memberInfo = member.Member;
             var colAttr = memberInfo.GetCustomAttribute<ColumnAttribute>();
             var colName = colAttr?.Name ?? memberInfo.Name;
-            var colTableNameFallback = GetEntityTableName(member.Expression!.Type);
+            var colTableNameFallback = GetEntityTableName(member.Expression!.Type, context.options);
             var colEntityTypeFallback = member.Expression!.Type;
             return (colName, colTableNameFallback, colEntityTypeFallback);
         }
@@ -501,7 +506,7 @@ namespace DLinq
         {
             var colAttr = memberInfo.GetCustomAttribute<ColumnAttribute>();
             var colName = colAttr?.Name ?? memberInfo.Name;
-            var colTableNameFallback = GetEntityTableName(memberInfo.ReflectedType!);
+            var colTableNameFallback = GetEntityTableName(memberInfo.ReflectedType!, context.options);
             var colEntityTypeFallback = memberInfo.ReflectedType!;
             return (colName, colTableNameFallback, colEntityTypeFallback);
         }
@@ -597,7 +602,7 @@ namespace DLinq
             {
                 var colName = member.Member.Name;
                 string tableAlias = GetAliasForMember(member, context);
-                string entityTable = GetEntityTableName(member.Expression.Type);
+                string entityTable = GetEntityTableName(member.Expression.Type, context.options);
                 if (entityTable == tableAlias) tableAlias = null;
                 // Handle null constants as IS NULL / IS NOT NULL
                 if (constantValue == null)
@@ -751,6 +756,7 @@ namespace DLinq
             public AliasGenerator AliasGen { get; } = new AliasGenerator();
             public Dictionary<string, string> TableAliasMap { get; } = new();
             public Dictionary<ParameterExpression, string> ParameterAliasMap { get; } = new(); // NEW
+            public QueryOptions? options { get; set; }
         }
 
         /// <summary>
@@ -760,9 +766,9 @@ namespace DLinq
         /// <param name="expression">LINQ expression tree to translate.</param>
         /// <param name="parameters">Output list of parameter values for SQL statement.</param>
         /// <returns>SQL SELECT statement string.</returns>
-        public string Translate(SqlSelectNode queryTree, out List<object> parameters)
+        public string Translate(SqlSelectNode queryTree, out List<object> parameters, QueryOptions? options = null)
         {
-            var context = new TranslateContext { dialect = _dialect };
+            var context = new TranslateContext { dialect = _dialect, options = options };
             parameters = new List<object>();
             var primaryKeys = new List<string>();
 
@@ -784,7 +790,7 @@ namespace DLinq
             }
 
 
-            queryTree.FromTable = GetEntityTableName(queryTree.FromEntity);
+            queryTree.FromTable = GetEntityTableName(queryTree.FromEntity, context.options);
             queryTree.TableAlias = GetAliasForEntity(queryTree.FromEntity, context);
 
             if (queryTree.Columns == null)
@@ -856,8 +862,8 @@ namespace DLinq
             if (leftType == null || rightType == null)
                 throw new InvalidOperationException("Unable to determine join left/right entity types for translation.");
 
-            join.LeftTable = GetEntityTableName(leftType);
-            join.RightTable = GetEntityTableName(rightType);
+            join.LeftTable = GetEntityTableName(leftType, context.options);
+            join.RightTable = GetEntityTableName(rightType, context.options);
 
             // Ensure aliases are registered so ParsePredicate and projection logic resolve the same aliases
             var leftAlias = GetAliasForEntity(leftType, context);
@@ -887,7 +893,7 @@ namespace DLinq
             var entityType = entity.GetType();
             var tableType = typeof(TableType);
             var tableAttr = tableType.GetCustomAttribute<TableAttribute>();
-            var tableName = options.TableName ?? GetEntityTableName(tableType);
+            var tableName = options.TableName ?? GetEntityTableName(tableType, options);
             var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var columns = new List<string>();
@@ -942,7 +948,7 @@ namespace DLinq
             options ??= new UpdateOptions();
             var entityType = entity.GetType();
             var tableType = typeof(TableType);
-            var tableName = options.TableName ?? GetEntityTableName(tableType);
+            var tableName = options.TableName ?? GetEntityTableName(tableType, options);
             var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var setDict = new Dictionary<string, object>();
@@ -1016,7 +1022,7 @@ namespace DLinq
             var context = new TranslateContext { dialect = _dialect };
             var entityType = entity.GetType();
             var tableType = typeof(TableType);
-            var tableName = options.TableName ?? GetEntityTableName(tableType);
+            var tableName = options.TableName ?? GetEntityTableName(tableType, options);
             var properties = tableType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var entityProps = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(_ => _.Name);
             var setDict = new Dictionary<string, object>();
@@ -1088,13 +1094,13 @@ namespace DLinq
         public (string sql, object parameters) GenerateDeleteSql(
             Type entityType,
             LambdaExpression wherePredicate,
-            Options? options = null,
+            TableOptions? options = null,
             Dictionary<string, object>? keyValues = null)
         {
-            options ??= new Options();
+            options ??= new TableOptions();
             var context = new TranslateContext { dialect = _dialect };
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
-            var tableName = options.TableName ?? GetEntityTableName(entityType);
+            var tableName = options.TableName ?? GetEntityTableName(entityType, options);
             var parameters = new List<object>();
             var whereSql = "";
 
@@ -1179,7 +1185,7 @@ namespace DLinq
             options ??= new InsertOptions();
             var entityType = entity.GetType();
             var tableAttr = entityType.GetCustomAttribute<TableAttribute>();
-            var tableName = options.TableName ?? GetEntityTableName(entityType);
+            var tableName = options.TableName ?? GetEntityTableName(entityType, options);
             var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var columns = new List<string>();
             var paramNames = new List<string>();

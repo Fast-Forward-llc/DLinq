@@ -1,16 +1,17 @@
+using Dapper;
+using Microsoft.Data.SqlClient;
+using Npgsql;
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Data;
+using System.Data.Common;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using Npgsql;
-using Microsoft.Data.SqlClient;
-using System.ComponentModel.DataAnnotations;
-using System.Collections.Generic;
-using Dapper;
-using System.Diagnostics;
 using System.Text.Json;
-using System.Data.Common;
 
 namespace DLinq
 {
@@ -30,9 +31,10 @@ namespace DLinq
 
         /// <summary>
         /// Map entity names to table names. assign custom mapping function.
-        /// P1 = Entity.FullName
-        /// P2 = TableName (from attribute mapping)
-        /// Return = your mapped table name. if null is returned TableName will be used as the mapping
+        /// P1 = Entity Type
+        /// P2 = Table Name (from attribute mapping with Schema if present)
+        /// Return = calculated table name. 
+        /// if null is returned the Query Translator will use the inputted TableName for entity mappings
         /// </summary>
         public Func<Type, string, string>? Entity2TableMapper {
             get {
@@ -42,6 +44,8 @@ namespace DLinq
                 _provider.Translator.Entity2TableMapper = value;
             }
         }
+
+        public QueryOptions? Options { get; set; }
 
         public DLinqConnection(IDbConnection connection, ISqlDialect dialect, IDapperProvider? dapperProvider = null)
         {
@@ -61,32 +65,65 @@ namespace DLinq
             return _dapper.Query<T>(sqlQuery.Sql, sqlQuery.Parameters, GetCurrentTransaction()!);
         }
 
-        public virtual IEnumerable<T> Query<T>(SqlQuery sqlQuery)
+        public virtual IEnumerable<T> Query<T>(SqlQuery sqlQuery, QueryOptions? options = null)
         {
-            var (sql, parameters) = sqlQuery.ToSql();
+            var (sql, parameters) = sqlQuery.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
-        public virtual IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate)
+        public virtual IEnumerable<T> Query<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
         {
             var query = From<T>().Where(predicate);
-            var (sql, parameters) = query.ToSql();
+            var (sql, parameters) = query.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
-        public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery sqlQuery)
+        public virtual async Task<IEnumerable<T>> QueryAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null)
         {
-            var (sql, parameters) = sqlQuery.ToSql();
+            var (sql, parameters) = sqlQuery.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
-        public virtual async Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate)
+        public virtual async Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
         {
             var query = From<T>().Where(predicate);
-            var (sql, parameters) = query.ToSql();
+            var (sql, parameters) = query.ToSql(options);
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
+            return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
+        }
+
+        public virtual IEnumerable<T> QueryFirst<T>(SqlQuery sqlQuery, QueryOptions? options = null)
+        {
+            sqlQuery.Take(1);
+            var (sql, parameters) = sqlQuery.ToSql(options);
+            
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
+            return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
+        }
+
+        public virtual IEnumerable<T> QueryFirst<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
+        {
+            var query = From<T>().Where(predicate).Take(1);
+            var (sql, parameters) = query.ToSql(options);
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
+            return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
+        }
+
+        public virtual async Task<IEnumerable<T>> QueryFirstAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null)
+        {
+            sqlQuery.Take(1);
+            var (sql, parameters) = sqlQuery.ToSql(options);
+            if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
+            return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
+        }
+
+        public virtual async Task<IEnumerable<T>> QueryFirstAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
+        {
+            var query = From<T>().Where(predicate).Take(1);
+            var (sql, parameters) = query.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
@@ -111,9 +148,9 @@ namespace DLinq
         /// Gets an entity of type T by its key(s).
         /// Pass an object whose properties match the key fields of T.
         /// </summary>
-        public virtual T? GetById<T>(object keyValues)
+        public virtual T? GetById<T>(object keyValues, QueryOptions? options = null)
         {
-            var (sql, parameters) = GetByIdCore<T>(keyValues);
+            var (sql, parameters) = GetByIdCore<T>(keyValues, options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
@@ -130,9 +167,9 @@ namespace DLinq
         /// Gets an entity of type T by its key(s).
         /// Pass an object whose properties match the key fields of T.
         /// </summary>
-        public virtual async Task<T?> GetByIdAsync<T>(object keyValues)
+        public virtual async Task<T?> GetByIdAsync<T>(object keyValues, QueryOptions? options = null)
         {
-            var (sql, parameters) = GetByIdCore<T>(keyValues);
+            var (sql, parameters) = GetByIdCore<T>(keyValues, options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
@@ -145,7 +182,7 @@ namespace DLinq
             }
         }
 
-        protected virtual (string sql, object? parameters) GetByIdCore<T>(object keyValues)
+        protected virtual (string sql, object? parameters) GetByIdCore<T>(object keyValues, QueryOptions? options = null)
         {
             var keyProps = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(KeyAttribute), true).Any())
@@ -177,16 +214,16 @@ namespace DLinq
             }
             var lambda = Expression.Lambda<Func<T, bool>>(predicate, param);
             var query = From<T>().Where(lambda);
-            var (sql, parameters) = query.ToSql();
+            var (sql, parameters) = query.ToSql(options);
             return (sql, parameters);
         }
 
         /// <summary>
         /// Gets an entity of type T by its single key field.
         /// </summary>
-        public virtual T? GetById<T, TKey>(TKey key)
+        public virtual T? GetById<T, TKey>(TKey key, QueryOptions? options = null)
         {
-            var (sql, parameters) = GetByIdCore<T, TKey>(key);
+            var (sql, parameters) = GetByIdCore<T, TKey>(key, options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
@@ -202,9 +239,9 @@ namespace DLinq
         /// <summary>
         /// Gets an entity of type T by its single key field.
         /// </summary>
-        public virtual async Task<T?> GetByIdAsync<T, TKey>(TKey key)
+        public virtual async Task<T?> GetByIdAsync<T, TKey>(TKey key, QueryOptions? options = null)
         {
-            var (sql, parameters) = GetByIdCore<T, TKey>(key);
+            var (sql, parameters) = GetByIdCore<T, TKey>(key, options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
             Open();
             try
@@ -217,7 +254,7 @@ namespace DLinq
             }
         }
 
-        protected virtual (string sql, object? parameters) GetByIdCore<T, TKey>(TKey key)
+        protected virtual (string sql, object? parameters) GetByIdCore<T, TKey>(TKey key, QueryOptions? options = null)
         {
             var keyProps = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(KeyAttribute), true).Any())
@@ -233,7 +270,7 @@ namespace DLinq
             var equal = Expression.Equal(member, constant);
             var lambda = Expression.Lambda<Func<T, bool>>(equal, param);
             var query = From<T>().Where(lambda);
-            var (sql, parameters) = query.ToSql();
+            var (sql, parameters) = query.ToSql(options);
             return (sql, parameters);
         }
 
@@ -242,6 +279,7 @@ namespace DLinq
         /// </summary>
         public virtual T? Insert<T>(object entity, InsertOptions? options = null)
         {
+            if (entity == null) return default(T);
             Open();
             try
             {
@@ -264,6 +302,7 @@ namespace DLinq
         /// </summary>
         public virtual T? Insert<T>(T entity, InsertOptions? options = null)
         {
+            if (entity == null) return entity;
             Open();
             try
             {
@@ -287,6 +326,7 @@ namespace DLinq
         /// </summary>
         public virtual async Task<T?> InsertAsync<T>(object entity, InsertOptions? options = null)
         {
+            if (entity == null) return default(T);
             Open();
             try
             {
@@ -310,6 +350,7 @@ namespace DLinq
         /// </summary>
         public virtual async Task<T?> InsertAsync<T>(T entity, InsertOptions? options = null)
         {
+            if (entity == null) return entity;
             Open();
             try
             {
@@ -333,6 +374,7 @@ namespace DLinq
         /// </summary>
         public virtual R? Insert<T, R>(object entity, InsertOptions? options = null)
         {
+            if (entity == null) return default(R);
             Open();
             try
             {
@@ -355,6 +397,7 @@ namespace DLinq
         /// </summary>
         public virtual async Task<R?> InsertAsync<T, R>(object entity, InsertOptions? options = null)
         {
+            if (entity == null) return default(R);
             Open();
             try
             {
@@ -378,6 +421,7 @@ namespace DLinq
         /// </summary>
         public virtual T? Update<T>(object entity, UpdateOptions? options = null)
         {
+            if (entity == null) return default(T);
             Open();
             try
             {
@@ -400,9 +444,11 @@ namespace DLinq
         /// </summary>
         public virtual T? Update<T>(T entity, UpdateOptions? options = null)
         {
+            if (entity == null) return entity;
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
@@ -423,9 +469,11 @@ namespace DLinq
         /// </summary>
         public virtual T? Update<T>(object entity, Expression<Func<T, bool>> wherePredicate, UpdateOptions? options = null)
         {
+            if (entity == null) return default(T);
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, wherePredicate, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
@@ -443,9 +491,11 @@ namespace DLinq
 
         public virtual async Task<T?> UpdateAsync<T>(object entity, UpdateOptions? options = null)
         {
+            if (entity == null) return default(T);
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
@@ -462,9 +512,11 @@ namespace DLinq
         }
         public virtual async Task<T?> UpdateAsync<T>(T entity, UpdateOptions? options = null)
         {
+            if (entity == null) return entity;
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
@@ -482,9 +534,11 @@ namespace DLinq
 
         public virtual async Task<T?> UpdateAsync<T>(object entity, Expression<Func<T, bool>> wherePredicate, UpdateOptions? options = null)
         {
+            if (entity == null) return default(T);
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
@@ -502,9 +556,11 @@ namespace DLinq
 
         public virtual async Task<T?> UpdateAsync<T>(T entity, Expression<Func<T, bool>> wherePredicate, UpdateOptions? options = null)
         {
+            if (entity == null) return entity;
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToUpdateSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 if (options?.SelectAfterMutation == true)
@@ -523,11 +579,12 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
-        public virtual int Delete<T>(Expression<Func<T, bool>> predicate, Options? options = null)
+        public virtual int Delete<T>(Expression<Func<T, bool>> predicate, TableOptions? options = null)
         {
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql}\r\n{JsonSerializer.Serialize(parameters)}");
@@ -542,11 +599,12 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
-        public virtual async Task<int> DeleteAsync<T>(Expression<Func<T, bool>> predicate, Options? options = null)
+        public virtual async Task<int> DeleteAsync<T>(Expression<Func<T, bool>> predicate, TableOptions? options = null)
         {
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var query = From<T>();
                 var (sql, parameters) = query.ToDeleteSql(predicate, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
@@ -561,11 +619,13 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
-        public virtual int Delete<T>(T entity, Options? options = null)
+        public virtual int Delete<T>(T entity, TableOptions? options = null)
         {
+            if (entity == null) return 0;
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToDeleteSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return _dapper.Execute(sql, parameters, GetCurrentTransaction()!);
@@ -579,11 +639,13 @@ namespace DLinq
         /// <summary>
         /// Deletes entities of type T from the database matching the given predicate.
         /// </summary>
-        public virtual async Task<int> DeleteAsync<T>(T entity, Options? options = null)
+        public virtual async Task<int> DeleteAsync<T>(T entity, TableOptions? options = null)
         {
+            if (entity == null) return 0;
             Open();
             try
             {
+                options ??= Options != null ? new UpdateOptions(Options) : null;
                 var (sql, parameters) = From<T>().ToDeleteSql(entity, options);
                 if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
                 return await _dapper.ExecuteAsync(sql, parameters, GetCurrentTransaction()!);

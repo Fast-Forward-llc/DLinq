@@ -115,6 +115,26 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Insert_WithDefaultSchema_SqlIncludesSchema()
+        {
+            var mockConn = new Mock<IDbConnection>();
+            var mockDapperProvider = new Mock<IDapperProvider>();
+            var entity = new SingleKeyEntity { Id = 1, Name = "Test" };
+            string? capturedSql = null;
+            mockDapperProvider
+                .Setup(d => d.QuerySingleOrDefault<SingleKeyEntity>(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<IDbTransaction>()))
+                .Callback<string, object, IDbTransaction>((sql, _, __) => capturedSql = sql)
+                .Returns(entity);
+            var conn = new DLinqConnection(mockConn.Object, new PostgresDialect(), mockDapperProvider.Object);
+            var options = new InsertOptions { DefaultSchema = "abc", SelectAfterMutation = true };
+
+            conn.Insert(entity, options);
+
+            Assert.IsNotNull(capturedSql);
+            Assert.IsTrue(capturedSql.Contains("\"abc\"."), $"Expected schema \"abc\" in SQL but got: {capturedSql}");
+        }
+
+        [TestMethod]
         public void Update_SelectAfterMutation_ReturnsEntity()
         {
             var mockConn = new Mock<IDbConnection>();
@@ -140,6 +160,46 @@ namespace DLinqTests
             var options = new DLinq.UpdateOptions { SelectAfterMutation = true };
             var result = conn.Update<SingleKeyEntity>(entity, _ => _.Name.StartsWith("X"), options);
             Assert.AreEqual(entity, result);
+        }
+
+        [TestMethod]
+        public void Update_WithDefaultSchema_SqlIncludesSchema()
+        {
+            var mockConn = new Mock<IDbConnection>();
+            var mockDapperProvider = new Mock<IDapperProvider>();
+            var entity = new SingleKeyEntity { Id = 2, Name = "Updated" };
+            string? capturedSql = null;
+            mockDapperProvider
+                .Setup(d => d.QuerySingleOrDefault<SingleKeyEntity>(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<IDbTransaction>()))
+                .Callback<string, object, IDbTransaction>((sql, _, __) => capturedSql = sql)
+                .Returns(entity);
+            var conn = new DLinqConnection(mockConn.Object, new PostgresDialect(), mockDapperProvider.Object);
+            var options = new UpdateOptions { DefaultSchema = "abc", SelectAfterMutation = true };
+
+            conn.Update(entity, options);
+
+            Assert.IsNotNull(capturedSql);
+            Assert.IsTrue(capturedSql.Contains("\"abc\"."), $"Expected schema \"abc\" in SQL but got: {capturedSql}");
+        }
+
+        [TestMethod]
+        public void GetById_WithSchema_SqlIncludesSchema()
+        {
+            var mockConn = new Mock<IDbConnection>();
+            var mockDapperProvider = new Mock<IDapperProvider>();
+            var entity = new SingleKeyEntity { Id = 1, Name = "Test" };
+            string? capturedSql = null;
+            mockDapperProvider
+                .Setup(d => d.QuerySingleOrDefault<SingleKeyEntity>(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<IDbTransaction>()))
+                .Callback<string, object, IDbTransaction>((sql, _, __) => capturedSql = sql)
+                .Returns(entity);
+            var conn = new DLinqConnection(mockConn.Object, new PostgresDialect(), mockDapperProvider.Object);
+            var options = new QueryOptions { Schema = "xyz" };
+
+            conn.GetById<SingleKeyEntity, int>(1, options);
+
+            Assert.IsNotNull(capturedSql);
+            Assert.IsTrue(capturedSql.Contains("\"xyz\"."), $"Expected schema \"xyz\" in SQL but got: {capturedSql}");
         }
 
         [TestMethod]

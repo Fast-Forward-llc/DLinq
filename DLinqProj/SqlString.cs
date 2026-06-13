@@ -31,9 +31,9 @@ namespace DLinq
         }
 
 
-        public string TableName<T>()
+        public string TableName<T>(QueryOptions? options = null)
         {
-            return _sqlDialect.FormatTable(_queryTranslator.GetEntityTableName(typeof(T)));
+            return _sqlDialect.FormatTable(_queryTranslator.GetEntityTableName(typeof(T), options));
         }
 
         public string ColumnName<TEntity>(Expression<Func<TEntity, object?>> prop)

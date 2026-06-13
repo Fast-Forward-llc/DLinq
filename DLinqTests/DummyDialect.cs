@@ -64,5 +64,6 @@ namespace DLinqTests
                 _ => throw new NotSupportedException($"Expression type {expressionType} is not supported.")
             };
         }
+        public (string? Schema, string Table) ParseTableName(string tableName) => (null, tableName);
     }
 }

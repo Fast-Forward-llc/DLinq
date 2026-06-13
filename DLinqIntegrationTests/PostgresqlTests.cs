@@ -229,8 +229,7 @@ namespace DLinqIntegrationTests
             var query = dlinq.From<Person>()
                 .OrderBy(p => p.Age)
                 .Skip(2)
-                .Take(5)
-                .ToSqlQuery();
+                .Take(5);
             var results = dlinq.Query<Person>(query).ToList();
 
             Assert.AreEqual(5, results.Count);
