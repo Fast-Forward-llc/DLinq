@@ -56,6 +56,43 @@ namespace DLinqTests
         {
         }
 
+        // Base class with a column ("Name") that will also be shared (by name) with the joined entity below.
+        private abstract class AnimalBase
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        // Derived "From" class - inherits Id/Name from AnimalBase and adds its own column.
+        private class Pet3 : AnimalBase
+        {
+            public int OwnerId { get; set; }
+        }
+
+        private class PersonWithNotMapped
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            public int Id { get; set; }
+            public string Name { get; set; }
+
+            [NotMapped]
+            public string FullDisplayName { get; set; }
+        }
+
+        private class PersonWithColumnAttribute
+        {
+            [Key]
+            [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+            [Column("PersonId")]
+            public int Id { get; set; }
+            [Column("FullName")]
+            public string Name { get; set; }
+            public int Age { get; set; }
+        }
+
         [TestInitialize]
         public void TestInitialize() {
         }
@@ -90,6 +127,54 @@ namespace DLinqTests
             var (sql, parameters) = query.ToSql();
             Console.WriteLine(sql);
             Assert.AreEqual("SELECT [t1].[Name] AS [Name], [t1].[Age] AS [Age], @p0 AS [DepartmentId] FROM [Person] AS [t1]", sql);
+        }
+
+        [TestMethod]
+        public void Select_Generic_T1_ProjectsAllColumnsOfT1()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Select<Person>();
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT [t1].[Id] AS [Id], [t1].[Name] AS [Name], [t1].[Age] AS [Age] FROM [Person] AS [t1]", sql);
+        }
+
+        [TestMethod]
+        public void Select_Generic_T1_WithInheritedBaseColumns_And_JoinedEntityWithSameColumnNames_UsesCorrectAliases()
+        {
+            var provider = GetProvider();
+            // Pet3 inherits Id/Name from AnimalBase; joined Person also has Id/Name columns.
+            var query = new SqlQuery<Pet3>(provider)
+                .Join<Person>((pet, person) => pet.OwnerId == person.Id)
+                .Select<Pet3>();
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[OwnerId] AS [OwnerId], [t1].[Id] AS [Id], [t1].[Name] AS [Name] FROM [Pet3] AS [t1]"
+                + " INNER JOIN [Person] AS [t2] ON [t1].[OwnerId] = [t2].[Id]"
+                , sql);
+        }
+
+        [TestMethod]
+        public void Select_Generic_T1_ExcludesNotMappedProperties()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<PersonWithNotMapped>(provider).Select<PersonWithNotMapped>();
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT [t1].[Id] AS [Id], [t1].[Name] AS [Name] FROM [PersonWithNotMapped] AS [t1]", sql);
+        }
+
+        [TestMethod]
+        public void Select_Generic_T1_UsesColumnAttributeName_ButAliasesToPropertyName()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<PersonWithColumnAttribute>(provider).Select<PersonWithColumnAttribute>();
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual(
+                "SELECT [t1].[PersonId] AS [Id], [t1].[FullName] AS [Name], [t1].[Age] AS [Age] FROM [PersonWithColumnAttribute] AS [t1]",
+                sql);
         }
 
         [TestMethod]

@@ -17,58 +17,58 @@ namespace DLinq
 
         public abstract SqlQuery Take(int count);
 
-        //public static LambdaExpression BuildPredicate(FilterCriteria[] filters, string boolOperator)
-        //{
-        //    if (filters == null || filters.Length == 0)
-        //        throw new ArgumentException("At least one filter is required.");
+        public static LambdaExpression BuildPredicate(FilterCriteria[] filters, string boolOperator)
+        {
+            if (filters == null || filters.Length == 0)
+                throw new ArgumentException("At least one filter is required.");
 
-        //    if (!(string.Equals(boolOperator,"AND", StringComparison.OrdinalIgnoreCase) || string.Equals(boolOperator, "OR", StringComparison.OrdinalIgnoreCase)))
-        //        throw new ArgumentException("Only 'AND' and 'OR' are supported.");
-        //    boolOperator = boolOperator.ToUpper();
-        //    // Get distinct entity types in order of first appearance
-        //    var entityTypes = filters.Select(f => f.EntityType).Distinct().ToArray();
-        //    var parameters = entityTypes.Select((t, i) => Expression.Parameter(t, $"e{i + 1}")).ToArray();
+            if (!(string.Equals(boolOperator, "AND", StringComparison.OrdinalIgnoreCase) || string.Equals(boolOperator, "OR", StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("Only 'AND' and 'OR' are supported.");
+            boolOperator = boolOperator.ToUpper();
+            // Get distinct entity types in order of first appearance
+            var entityTypes = filters.Select(f => f.EntityType).Distinct().ToArray();
+            var parameters = entityTypes.Select((t, i) => Expression.Parameter(t, $"e{i + 1}")).ToArray();
 
-        //    // Build each filter expression
-        //    var expressions = filters.Select(filter =>
-        //    {
-        //        // Find the parameter for the filter's entity type
-        //        int paramIndex = Array.FindIndex(entityTypes, t => t == filter.EntityType);
-        //        if (paramIndex == -1)
-        //            throw new ArgumentException($"EntityType {filter.EntityType.Name} not found in generic parameters.");
+            // Build each filter expression
+            var expressions = filters.Select(filter =>
+            {
+                // Find the parameter for the filter's entity type
+                int paramIndex = Array.FindIndex(entityTypes, t => t == filter.EntityType);
+                if (paramIndex == -1)
+                    throw new ArgumentException($"EntityType {filter.EntityType.Name} not found in generic parameters.");
 
-        //        var param = parameters[paramIndex];
-        //        var property = Expression.PropertyOrField(param, filter.PropertyName);
+                var param = parameters[paramIndex];
+                var property = Expression.PropertyOrField(param, filter.PropertyName);
 
-        //        // Convert right operand to the property type
-        //        var right = Expression.Constant(Convert.ChangeType(filter.RightOperand, property.Type), property.Type);
+                // Convert right operand to the property type
+                var right = Expression.Constant(Convert.ChangeType(filter.RightOperand, property.Type), property.Type);
 
-        //        // Build the comparison
-        //        return filter.Operator switch
-        //        {
-        //            ExpressionType.Equal => Expression.Equal(property, right),
-        //            ExpressionType.NotEqual => Expression.NotEqual(property, right),
-        //            ExpressionType.GreaterThan => Expression.GreaterThan(property, right),
-        //            ExpressionType.GreaterThanOrEqual => Expression.GreaterThanOrEqual(property, right),
-        //            ExpressionType.LessThan => Expression.LessThan(property, right),
-        //            ExpressionType.LessThanOrEqual => Expression.LessThanOrEqual(property, right),
-        //            _ => throw new NotSupportedException($"Unsupported ExpressionType: {filter.Operator}")
-        //        };
-        //    }).ToArray();
+                // Build the comparison
+                return filter.Operator switch
+                {
+                    ExpressionType.Equal => Expression.Equal(property, right),
+                    ExpressionType.NotEqual => Expression.NotEqual(property, right),
+                    ExpressionType.GreaterThan => Expression.GreaterThan(property, right),
+                    ExpressionType.GreaterThanOrEqual => Expression.GreaterThanOrEqual(property, right),
+                    ExpressionType.LessThan => Expression.LessThan(property, right),
+                    ExpressionType.LessThanOrEqual => Expression.LessThanOrEqual(property, right),
+                    _ => throw new NotSupportedException($"Unsupported ExpressionType: {filter.Operator}")
+                };
+            }).ToArray();
 
-        //    // Combine all expressions with the specified boolean operator
-        //    Expression combined = expressions[0];
-        //    for (int i = 1; i < expressions.Length; i++)
-        //    {
-        //        combined = boolOperator == "AND"
-        //            ? Expression.AndAlso(combined, expressions[i])
-        //            : Expression.OrElse(combined, expressions[i]);
-        //    }
+            // Combine all expressions with the specified boolean operator
+            Expression combined = expressions[0];
+            for (int i = 1; i < expressions.Length; i++)
+            {
+                combined = boolOperator == "AND"
+                    ? Expression.AndAlso(combined, expressions[i])
+                    : Expression.OrElse(combined, expressions[i]);
+            }
 
-        //    // Build the lambda: (T1 e1, ..., T3 e3) => combined
-        //    var funcType = Expression.GetFuncType(parameters.Select(p => p.Type).Concat(new[] { typeof(bool) }).ToArray());
-        //    return Expression.Lambda(funcType, combined, parameters);
-        //}
+            // Build the lambda: (T1 e1, ..., T3 e3) => combined
+            var funcType = Expression.GetFuncType(parameters.Select(p => p.Type).Concat(new[] { typeof(bool) }).ToArray());
+            return Expression.Lambda(funcType, combined, parameters);
+        }
     }
 
     public class SqlQuery<T> : SqlQuery 
@@ -315,6 +315,16 @@ namespace DLinq
         public SqlQuery<T> Select(Expression<Func<T,object>> selector)
         {
             if (selector == null) throw new ArgumentNullException(nameof(selector));
+            this.selectNode.SelectExpr = selector;
+            return this;
+        }
+
+        public SqlQuery<T> Select<T1>()
+        {
+            // Build SELECT column expression that projects all columns of T1 (identity projection).
+            var param = Expression.Parameter(typeof(T1), "x");
+            var body = Expression.Convert(param, typeof(object));
+            var selector = Expression.Lambda<Func<T1, object>>(body, param);
             this.selectNode.SelectExpr = selector;
             return this;
         }

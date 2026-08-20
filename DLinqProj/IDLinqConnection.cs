@@ -28,12 +28,13 @@ namespace DLinq
         IEnumerable<T> Query<T>(SqlQuery sqlQuery, QueryOptions? options = null);
         Task<IEnumerable<T>> QueryAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null);
         Task<IEnumerable<T>> QueryAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null);
-        IEnumerable<T> QueryFirst<T>(SqlQuery sqlQuery, QueryOptions? options = null);
-        Task<IEnumerable<T>> QueryFirstAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null);
-        IEnumerable<T> QueryFirst<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null);
-        Task<IEnumerable<T>> QueryFirstAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null);
+        T QueryFirst<T>(SqlQuery sqlQuery, QueryOptions? options = null);
+        Task<T> QueryFirstAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null);
+        T QueryFirst<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null);
+        Task<T> QueryFirstAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null);
         void Rollback();
         SqlQuery<T> From<T>();
+        SqlQuery<T> SelectFrom<T>(Expression<Func<T, object>>? selector = null, Expression<Func<T, bool>>? predicate = null);
         T? Update<T>(T entity, UpdateOptions? options = null);
         T? Update<T>(object entity, UpdateOptions? options = null);
         T? Update<T>(object entity, Expression<Func<T, bool>> predicate, UpdateOptions? options = null);

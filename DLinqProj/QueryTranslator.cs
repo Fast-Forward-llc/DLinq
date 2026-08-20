@@ -1526,16 +1526,23 @@ namespace DLinq
         private static List<Column> ParseFallbackProjection(Expression body, TranslateContext context)
         {
             var columns = new List<Column>();
+            // Unwrap boxing conversions (e.g. from `x => x` typed as Func<T1, object>) to get the real entity type.
+            while (body.NodeType == ExpressionType.Convert || body.NodeType == ExpressionType.ConvertChecked)
+                body = ((UnaryExpression)body).Operand;
             var type = body.Type;
             // Avoid projecting delegate or expression types (which have Target/Method, not entity columns)
             if (typeof(Delegate).IsAssignableFrom(type) || typeof(System.Linq.Expressions.Expression).IsAssignableFrom(type))
             {
                 throw new NotSupportedException($"Projection of type '{type}' is not supported. The projection expression is likely incorrect.");
             }
+            var tableAlias = GetAliasForEntity(type, context);
             foreach (var prop in type.GetProperties())
             {
-                var tableAlias = GetAliasForEntity(prop.DeclaringType!, context);
-                columns.Add(new Column(null, tableAlias, prop.Name, prop.Name));
+                if (prop.IsDefined(typeof(NotMappedAttribute), true))
+                    continue;
+                var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
+                var colName = colAttr?.Name ?? prop.Name;
+                columns.Add(new Column(null, tableAlias, colName, prop.Name));
             }
             return columns;
         }

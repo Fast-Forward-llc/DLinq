@@ -95,41 +95,52 @@ namespace DLinq
             return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
         }
 
-        public virtual IEnumerable<T> QueryFirst<T>(SqlQuery sqlQuery, QueryOptions? options = null)
+        public virtual T QueryFirst<T>(SqlQuery sqlQuery, QueryOptions? options = null)
         {
             sqlQuery.Take(1);
             var (sql, parameters) = sqlQuery.ToSql(options);
             
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
-            return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
+            return (_dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!)!);
         }
 
-        public virtual IEnumerable<T> QueryFirst<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
+        public virtual T QueryFirst<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
         {
             var query = From<T>().Where(predicate).Take(1);
             var (sql, parameters) = query.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
-            return _dapper.Query<T>(sql, parameters, GetCurrentTransaction()!);
+            return (_dapper.QuerySingleOrDefault<T>(sql, parameters, GetCurrentTransaction()!)!);
         }
 
-        public virtual async Task<IEnumerable<T>> QueryFirstAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null)
+        public virtual async Task<T> QueryFirstAsync<T>(SqlQuery sqlQuery, QueryOptions? options = null)
         {
             sqlQuery.Take(1);
             var (sql, parameters) = sqlQuery.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
-            return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
+            return (await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!))!;
         }
 
-        public virtual async Task<IEnumerable<T>> QueryFirstAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
+        public virtual async Task<T> QueryFirstAsync<T>(Expression<Func<T, bool>> predicate, QueryOptions? options = null)
         {
             var query = From<T>().Where(predicate).Take(1);
             var (sql, parameters) = query.ToSql(options);
             if (EnableSqlConsoleLogging) Console.WriteLine($"Executing query: {sql} \r\nWith Parameters: {JsonSerializer.Serialize(parameters)}");
-            return await _dapper.QueryAsync<T>(sql, parameters, GetCurrentTransaction()!);
+            return (await _dapper.QuerySingleOrDefaultAsync<T>(sql, parameters, GetCurrentTransaction()!))!;
         }
 
         // Expose SqlQuery<T> for LINQ operations
         public virtual SqlQuery<T> From<T>() => new SqlQuery<T>(_provider);
+        public virtual SqlQuery<T> SelectFrom<T>(Expression<Func<T, object>>? selector = null, Expression<Func<T, bool>>? predicate = null)
+        {
+            var query = new SqlQuery<T>(_provider);
+            if (selector != null ) query.Select<T>(selector);
+            else query.Select<T>();
+            if (predicate != null)
+            {
+                query.Where(predicate);
+            }
+            return query;
+        }
         public virtual SqlQuery<T> QueryBuilder<T>() => new SqlQuery<T>(_provider);
 
         public virtual int TransactionDepth => _transactionDepth;

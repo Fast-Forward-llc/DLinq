@@ -203,6 +203,19 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Select_Generic_FromT1_ProjectsAllColumnsOfT1()
+        {
+            var mockConn = new Mock<IDbConnection>();
+            var mockDapperProvider = new Mock<IDapperProvider>();
+            var entity = new SingleKeyEntity { Id = 1, Name = "Test" };
+            var conn = new DLinqConnection(mockConn.Object, new PostgresDialect(), mockDapperProvider.Object);
+            var query = conn.From<Pet>().Select<Pet>();
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT \"t1\".\"Id\" AS \"Id\", \"t1\".\"OwnerId\" AS \"OwnerId\", \"t1\".\"Name\" AS \"Name\" FROM \"Pet\" AS \"t1\"", sql);
+        }
+
+        [TestMethod]
         public void Delete_ExecutesDapper()
         {
             var mockConn = new Mock<IDbConnection>();
@@ -365,7 +378,68 @@ namespace DLinqTests
         // This will trigger the NotSupportedException in the constructor
         private class UnsupportedDialect : DummyDialect
         {
-            
+
+        }
+
+        [TestMethod]
+        public void SelectFrom_NoSelectorNoPredicate_ProjectsAllColumns()
+        {
+            var conn = GetTestConnection();
+
+            var query = conn.SelectFrom<Pet>();
+            var (sql, parameters) = query.ToSql();
+
+            Assert.AreEqual("SELECT \"t1\".\"Id\" AS \"Id\", \"t1\".\"OwnerId\" AS \"OwnerId\", \"t1\".\"Name\" AS \"Name\" FROM \"Pet\" AS \"t1\"", sql);
+        }
+
+        [TestMethod]
+        public void SelectFrom_WithSelector_ProjectsOnlySelectedColumns()
+        {
+            var conn = GetTestConnection();
+
+            var query = conn.SelectFrom<Pet>(p => new { p.Id, p.Name });
+            var (sql, parameters) = query.ToSql();
+
+            Assert.IsTrue(sql.Contains("\"Id\""), $"Expected Id column in SQL but got: {sql}");
+            Assert.IsTrue(sql.Contains("\"Name\""), $"Expected Name column in SQL but got: {sql}");
+            Assert.IsFalse(sql.Contains("\"OwnerId\""), $"Did not expect OwnerId column in SQL but got: {sql}");
+        }
+
+        [TestMethod]
+        public void SelectFrom_WithPredicate_AppendsWhereClause()
+        {
+            var conn = GetTestConnection();
+
+            var query = conn.SelectFrom<Pet>(predicate: p => p.OwnerId == 5);
+            var (sql, parameters) = query.ToSql();
+
+            Assert.IsTrue(sql.Contains("WHERE"), $"Expected WHERE clause in SQL but got: {sql}");
+            Assert.IsTrue(sql.Contains("\"OwnerId\""), $"Expected OwnerId column in WHERE clause but got: {sql}");
+        }
+
+        [TestMethod]
+        public void SelectFrom_WithSelectorAndPredicate_ProjectsColumnsAndFilters()
+        {
+            var conn = GetTestConnection();
+
+            var query = conn.SelectFrom<Pet>(p => new { p.Id, p.Name }, p => p.OwnerId == 5);
+            var (sql, parameters) = query.ToSql();
+
+            Assert.IsTrue(sql.Contains("\"Id\""), $"Expected Id column in SQL but got: {sql}");
+            Assert.IsTrue(sql.Contains("\"Name\""), $"Expected Name column in SQL but got: {sql}");
+            Assert.IsFalse(sql.Contains("\"OwnerId\" AS"), $"Did not expect OwnerId as a selected column but got: {sql}");
+            Assert.IsTrue(sql.Contains("WHERE"), $"Expected WHERE clause in SQL but got: {sql}");
+        }
+
+        [TestMethod]
+        public void SelectFrom_ReturnsNewQueryEachCall()
+        {
+            var conn = GetTestConnection();
+
+            var query1 = conn.SelectFrom<Pet>();
+            var query2 = conn.SelectFrom<Pet>();
+
+            Assert.AreNotSame(query1, query2);
         }
     }
 }
