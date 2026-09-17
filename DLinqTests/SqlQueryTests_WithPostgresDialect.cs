@@ -200,6 +200,131 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void OrderBy_DynamicList_PlainColumnName_ResolvesFromFromType()
+        {
+            var provider = GetProvider();
+            var orders = new List<DLinq.OrderBy>
+            {
+                new DLinq.OrderBy { Column = "Name", Direction = SortDir.Asc }
+            };
+            var query = new SqlQuery<Person>(provider).OrderBy(orders);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("ORDER BY"));
+            Assert.IsTrue(sql.Contains("\"Name\""));
+        }
+
+        [TestMethod]
+        public void OrderBy_DynamicList_DottedColumnName_ResolvesFromMatchingType()
+        {
+            var provider = GetProvider();
+            var orders = new List<DLinq.OrderBy>
+            {
+                new DLinq.OrderBy { Column = "Pet.Name", Direction = SortDir.Desc }
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((p, pet) => p.Id == pet.OwnerId)
+                .OrderBy(orders);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("ORDER BY \"t2\".\"Name\" DESC"));
+        }
+
+        [TestMethod]
+        public void OrderBy_DynamicList_MultipleColumns_AddsAllOrderBys()
+        {
+            var provider = GetProvider();
+            var orders = new List<DLinq.OrderBy>
+            {
+                new DLinq.OrderBy { Column = "Name", Direction = SortDir.Asc },
+                new DLinq.OrderBy { Column = "Age", Direction = SortDir.Desc }
+            };
+            var query = new SqlQuery<Person>(provider).OrderBy(orders);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("ORDER BY \"t1\".\"Name\" ASC, \"t1\".\"Age\" DESC"));
+        }
+
+        [TestMethod]
+        public void OrderBy_DynamicList_UnknownClassName_Throws()
+        {
+            var provider = GetProvider();
+            var orders = new List<DLinq.OrderBy>
+            {
+                new DLinq.OrderBy { Column = "Unknown.Name", Direction = SortDir.Asc }
+            };
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.OrderBy(orders);
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void OrderBy_DynamicList_IgnoresInvalidColumns()
+        {
+            var provider = GetProvider();
+            var orders = new List<DLinq.OrderBy>
+            {
+                new DLinq.OrderBy { Column = "Unknown.Name", Direction = SortDir.Asc },
+                new DLinq.OrderBy { Column = "NotAProperty", Direction = SortDir.Asc }
+            };
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.OrderBy(orders, ignoreInvalidColumns: true);
+                var (sql, parameters) = query.ToSql();
+                Console.WriteLine(sql);
+                Assert.IsFalse(sql.Contains("ORDER BY"));
+            }
+            catch (ArgumentException)
+            {
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+        }
+
+        [TestMethod]
+        public void OrderBy_DynamicList_UnknownPropertyName_Throws()
+        {
+            var provider = GetProvider();
+            var orders = new List<DLinq.OrderBy>
+            {
+                new DLinq.OrderBy { Column = "NotAProperty", Direction = SortDir.Asc }
+            };
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.OrderBy(orders);
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void OrderBy_DynamicList_NullEnumerable_Throws()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.OrderBy((List<DLinq.OrderBy>)null);
+                Assert.Fail("Expected ArgumentNullException was not thrown.");
+            }
+            catch (ArgumentNullException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
         public void ToInsertSql()
         {
             var provider = GetProvider();

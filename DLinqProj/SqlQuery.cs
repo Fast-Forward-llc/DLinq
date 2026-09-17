@@ -302,6 +302,120 @@ namespace DLinq
             AddOrderBy(expression, true);
             return this;
         }
+
+        /// <summary>
+        /// Dynamically builds and adds an OrderBy expression for each <see cref="OrderBy"/> element in
+        /// <paramref name="sortBy"/>. For each element, <see cref="OrderBy.Column"/> is resolved against the
+        /// generic types used by this query's <c>Select</c>, <c>From</c>, and <c>Join</c> clauses (in that
+        /// precedence order):
+        /// <list type="bullet">
+        /// <item>If the column is in dotted notation ("ClassName.PropertyName"), the class name must match the
+        /// simple name of one of those types, and the property name must exist on that type.</item>
+        /// <item>If the column is a plain property name, the first candidate type (searched in
+        /// Select, From, then Join precedence) that declares a matching property is used.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="sortBy">The collection of OrderBy specifications to apply.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="sortBy"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when a column cannot be resolved to a known type/property.</exception>
+        public SqlQuery<T> OrderBy(IEnumerable<OrderBy> sortBy, bool ignoreInvalidColumns = false)
+        {
+            if (sortBy == null) throw new ArgumentNullException(nameof(sortBy));
+
+            foreach (var order in sortBy)
+            {
+                if (order == null || string.IsNullOrWhiteSpace(order.Column))
+                    throw new ArgumentException("OrderBy.Column must be specified.", nameof(sortBy));
+
+                var descending = order.Direction == SortDir.Desc;
+                LambdaExpression? lambda = null;
+                try
+                {
+                    lambda = BuildOrderByExpression(order.Column);
+                }
+                catch (ArgumentException)
+                {
+                    if (!ignoreInvalidColumns)
+                        throw;
+                }
+
+                if (lambda != null) AddOrderBy(lambda, descending);
+            }
+
+            return this;
+        }
+
+        // Resolves a (possibly dotted) column name against the Select/From/Join generic types of this query
+        // and builds a LambdaExpression suitable for use with AddOrderBy.
+        private LambdaExpression BuildOrderByExpression(string column)
+        {
+            var candidateTypes = GetOrderByCandidateEntityTypes();
+
+            Type? targetType;
+            string propertyName;
+
+            var dotIndex = column.IndexOf('.');
+            if (dotIndex >= 0)
+            {
+                var className = column.Substring(0, dotIndex);
+                propertyName = column.Substring(dotIndex + 1);
+
+                if (string.IsNullOrWhiteSpace(className) || string.IsNullOrWhiteSpace(propertyName))
+                    throw new ArgumentException($"OrderBy column '{column}' is not a valid 'ClassName.PropertyName' expression.");
+
+                targetType = candidateTypes.FirstOrDefault(t => string.Equals(t.Name, className, StringComparison.Ordinal));
+                if (targetType == null)
+                    throw new ArgumentException($"OrderBy column '{column}' references class '{className}' which does not match any of the Select, From, or Join types of this query.");
+
+                if (targetType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance) == null)
+                    throw new ArgumentException($"OrderBy column '{column}': property '{propertyName}' not found on type '{targetType.Name}'.");
+            }
+            else
+            {
+                propertyName = column;
+                targetType = candidateTypes.FirstOrDefault(t => t.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance) != null);
+                if (targetType == null)
+                    throw new ArgumentException($"OrderBy column '{column}' does not match any property on the Select, From, or Join types of this query.");
+            }
+
+            var param = Expression.Parameter(targetType, "x");
+            var propertyAccess = Expression.PropertyOrField(param, propertyName);
+            var body = Expression.Convert(propertyAccess, typeof(object));
+            var funcType = typeof(Func<,>).MakeGenericType(targetType, typeof(object));
+            return Expression.Lambda(funcType, body, param);
+        }
+
+        // Returns the candidate entity types for OrderBy column resolution, in precedence order:
+        // Select generic types, then the From type (T), then Join generic types (in join-added order).
+        private List<Type> GetOrderByCandidateEntityTypes()
+        {
+            var types = new List<Type>();
+
+            if (this.selectNode.SelectExpr is LambdaExpression selectLambda)
+            {
+                foreach (var p in selectLambda.Parameters)
+                {
+                    if (!types.Contains(p.Type)) types.Add(p.Type);
+                }
+            }
+
+            if (!types.Contains(typeof(T))) types.Add(typeof(T));
+
+            foreach (var join in this.selectNode.Joins)
+            {
+                var joinType = join.GetType();
+                if (joinType.IsGenericType)
+                {
+                    foreach (var t in joinType.GetGenericArguments())
+                    {
+                        if (!types.Contains(t)) types.Add(t);
+                    }
+                }
+            }
+
+            return types;
+        }
+
         public SqlQuery<T> Skip(int count)
         {
             this.selectNode.Skip = count;

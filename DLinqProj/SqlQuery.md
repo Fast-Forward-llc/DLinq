@@ -21,6 +21,7 @@ var query = new SqlQuery<Person>(provider)
     .Take(10);
 ```
 - Supported methods: `Where`, `AndWhere`, `OrWhere`, `OrderBy`, `OrderByDescending`, `ThenBy`, `ThenByDescending`, `Skip`, `Take`, `Select`, and `Join`.
+- `OrderBy` also has an overload accepting `IEnumerable<OrderBy>` for dynamically building sort criteria from column name/direction pairs at runtime — see [Dynamic Sorting with OrderBy(IEnumerable&lt;OrderBy&gt;)](#dynamic-sorting-with-orderbyienumerableorderby).
 - All lambda parameters must be expressions (e.g., `Expression<Func<T, TResult>>`), not delegates.
 
 ## Filtering with Where, AndWhere, and OrWhere
@@ -181,6 +182,67 @@ var query = new SqlQuery<Person>(provider)
     .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
     .Where(predicate);
 // Now query.ToSql() will use the dynamically built predicate in the WHERE clause
+```
+
+## Dynamic Sorting with OrderBy(IEnumerable<OrderBy>)
+In addition to the strongly-typed `OrderBy`, `OrderByDescending`, `ThenBy`, and `ThenByDescending` methods that take lambda expressions, `SqlQuery<T>` supports building sort criteria dynamically at runtime from a list of column names — useful for grid sorting, API query parameters, or other user-driven scenarios where column names arrive as strings rather than compile-time expressions.
+
+```
+public SqlQuery<T> OrderBy(IEnumerable<OrderBy> orders)
+```
+
+Each `OrderBy` element specifies:
+- `Column`: The column to sort by, either as a plain property name (e.g., `"Name"`) or in dotted `"ClassName.PropertyName"` notation (e.g., `"Pet.Name"`).
+- `Direction`: A `SortDir` value — `SortDir.Asc` or `SortDir.Desc`.
+
+### Column resolution rules
+For each `OrderBy.Column`, the type it applies to is resolved against the generic types used by the query's `Select`, `From`, and `Join` clauses, checked in that precedence order:
+1. The generic type parameters of the `Select` expression (if a typed `Select<T1,...>` was used).
+2. The query's `From` type (`T`).
+3. The generic type arguments of any `Join`/`LeftJoin`/`RightJoin` calls, in the order they were added.
+
+- **Dotted notation** (`"ClassName.PropertyName"`): `ClassName` must match the simple name of one of the candidate types, and `PropertyName` must be a public instance property on that type. This disambiguates the column when multiple joined types could otherwise share a property name.
+- **Plain property name**: The candidate types are searched in the precedence order above, and the first type that declares a matching public instance property is used.
+
+If a column cannot be resolved — because the class name doesn't match any candidate type, or the property doesn't exist on the resolved type — an `ArgumentException` is thrown.
+
+### Basic usage
+```
+var ordering = new List<OrderBy>
+{
+    new OrderBy { Column = "Name", Direction = SortDir.Asc }
+};
+
+var query = new SqlQuery<Person>(provider)
+    .OrderBy(ordering);
+// ORDER BY "t1"."Name" ASC
+```
+
+### Multiple sort columns
+```
+var ordering = new List<OrderBy>
+{
+    new OrderBy { Column = "Name", Direction = SortDir.Asc },
+    new OrderBy { Column = "Age", Direction = SortDir.Desc }
+};
+
+var query = new SqlQuery<Person>(provider)
+    .OrderBy(ordering);
+// ORDER BY "t1"."Name" ASC, "t1"."Age" DESC
+```
+
+### Disambiguating joined columns with dotted notation
+When a query joins multiple types, use `"ClassName.PropertyName"` to specify which type's column to sort by:
+```
+var ordering = new List<OrderBy>
+{
+    new OrderBy { Column = "Pet.Name", Direction = SortDir.Desc }
+};
+
+var query = new SqlQuery<Person>(provider)
+    .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
+    .OrderBy(ordering);
+// ORDER BY "t2"."Name" DESC
 ```
 
 ## Mutation Operations
