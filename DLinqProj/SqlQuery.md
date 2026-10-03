@@ -27,6 +27,8 @@ var query = new SqlQuery<Person>(provider)
 ## Filtering with Where, AndWhere, and OrWhere
 `Where` sets the base WHERE predicate for the query. `AndWhere` and `OrWhere` append additional predicates, combining them with `AND` and `OR` respectively. Predicates are evaluated in declaration order, without implicit grouping — wrap compound expressions in a single lambda when precedence matters.
 
+> `Where`, `AndWhere`, and `OrWhere` also have overloads accepting a `JsonObject` for dynamically building predicates from untyped JSON filter payloads at runtime — see [Dynamic Predicates with BuildPredicate() and BuildJsonPredicate()](DynamicPredicates.md).
+
 ### `Where` — set the base predicate
 ```
 var query = new SqlQuery<Person>(provider)
@@ -140,49 +142,9 @@ var (sql, parameters) = query.ToSql(options);
 ```
 
 ## Dynamic Predicate Generation
-`SqlQuery.BuildPredicate()` is a static utility for dynamically building a boolean predicate expression from an array of `FilterCriteria` objects and a boolean operator ("AND" or "OR").
+`SqlQuery<T>` supports building WHERE/JOIN predicates dynamically at runtime via `BuildPredicate()` (from strongly-typed `FilterCriteria` objects) and `BuildJsonPredicate()` (from a `JsonObject`, backing the `Where`/`AndWhere`/`OrWhere` `JsonObject` overloads).
 
-This is useful for constructing dynamic WHERE clauses or JOIN criteria at runtime based on user input or other criteria.
-
-### Usage
-```
-// Suppose you have:
-// class Person { public int Age; }
-// class Pet { public string Name; }
-var filters = new[]
-{
-    new FilterCriteria(typeof(Person), nameof(Person.Age), ExpressionType.GreaterThan, 18),
-    new FilterCriteria(typeof(Pet), nameof(Pet.Name), ExpressionType.Equal, "Fido")
-};
-var lambda = SqlQuery<Person>.BuildPredicate(filters, "AND");
-// lambda is Expression<Func<Person, Pet, bool>>
-```
-
-Each `FilterCriteria` specifies:
-- `EntityType`: The type (e.g., `typeof(Person)`) for the left side of the comparison.
-- `PropertyName`: The property name on the entity type to compare.
-- `Operator`: The comparison operator (e.g., `ExpressionType.Equal`, `ExpressionType.GreaterThan`).
-- `RightOperand`: The constant value to compare against.
-
-The boolean operator parameter must be either "AND" or "OR" and determines how the fragments are combined.
-
-**Example:**
-```
-var filters = new[]
-{
-    new FilterCriteria(typeof(Person), "Age", ExpressionType.GreaterThan, 18),
-    new FilterCriteria(typeof(Pet), "Name", ExpressionType.Equal, "Fido")
-};
-var predicate = SqlQuery<Person>.BuildPredicate(filters, "AND");
-// Produces: (Person p, Pet pet) => (p.Age > 18) && (pet.Name == "Fido")
-
-// Use the Predicate as a dynamic WHERE clause in a query:
-var provider = new QueryProvider(new SqlServerDialect());
-var query = new SqlQuery<Person>(provider)
-    .Join<Pet>((person, pet) => person.Id == pet.OwnerId)
-    .Where(predicate);
-// Now query.ToSql() will use the dynamically built predicate in the WHERE clause
-```
+See [Dynamic Predicates with BuildPredicate() and BuildJsonPredicate()](DynamicPredicates.md) for full documentation and examples.
 
 ## Dynamic Sorting with OrderBy(IEnumerable<OrderBy>)
 In addition to the strongly-typed `OrderBy`, `OrderByDescending`, `ThenBy`, and `ThenByDescending` methods that take lambda expressions, `SqlQuery<T>` supports building sort criteria dynamically at runtime from a list of column names — useful for grid sorting, API query parameters, or other user-driven scenarios where column names arrive as strings rather than compile-time expressions.

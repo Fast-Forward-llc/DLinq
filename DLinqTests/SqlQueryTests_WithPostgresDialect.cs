@@ -415,6 +415,70 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_JsonObject_OperatorObject_StartsWith()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["op"] = "sw",
+                    ["value"] = "Jo"
+                }
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("LIKE"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("Jo%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_OperatorObject_EndsWith()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["op"] = "ew",
+                    ["value"] = "hn"
+                }
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("LIKE"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%hn", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_OperatorObject_StartsWith_NonStringColumn_Throws()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["op"] = "sw",
+                    ["value"] = "1"
+                }
+            };
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.Where(filter);
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
         public void Where_JsonObject_ArrayValue_ProducesIn()
         {
             var provider = GetProvider();

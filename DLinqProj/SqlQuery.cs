@@ -246,7 +246,7 @@ namespace DLinq
         // Builds a combined LambdaExpression predicate from a JsonObject's properties, resolving each column
         // against the Select/From/Join generic types of this query. Shared by the Where/AndWhere/OrWhere
         // JsonObject overloads.
-        private LambdaExpression BuildJsonPredicate(JsonObject filter, string combineOperator, bool ignoreInvalidColumns)
+        public LambdaExpression BuildJsonPredicate(JsonObject filter, string combineOperator, bool ignoreInvalidColumns)
         {
             if (filter == null) throw new ArgumentNullException(nameof(filter));
 
@@ -320,6 +320,8 @@ namespace DLinq
                     "lt" => Expression.LessThan(property, CoerceConstant(valueNode, property.Type, column)),
                     "lte" => Expression.LessThanOrEqual(property, CoerceConstant(valueNode, property.Type, column)),
                     "~" => BuildLike(property, valueNode, column),
+                    "sw" => BuildStringMatch(property, valueNode, column, nameof(string.StartsWith)),
+                    "ew" => BuildStringMatch(property, valueNode, column, nameof(string.EndsWith)),
                     _ => throw new ArgumentException($"Unsupported operator '{op}' for column '{column}'.")
                 };
             }
@@ -360,6 +362,19 @@ namespace DLinq
             var value = valueNode?.GetValue<string>() ?? throw new ArgumentException($"Filter for column '{column}' using '~' requires a non-null string value.");
             var containsMethod = typeof(string).GetMethod(nameof(string.Contains), new[] { typeof(string) })!;
             return Expression.Call(property, containsMethod, Expression.Constant(value));
+        }
+
+        // Builds a StartsWith/EndsWith comparison for the 'sw'/'ew' operators; only valid on string columns.
+        private static Expression BuildStringMatch(MemberExpression property, JsonNode? valueNode, string column, string methodName)
+        {
+            var opName = methodName == nameof(string.StartsWith) ? "sw" : "ew";
+
+            if (property.Type != typeof(string))
+                throw new ArgumentException($"The '{opName}' operator can only be used on string columns; column '{column}' is of type '{property.Type.Name}'.");
+
+            var value = valueNode?.GetValue<string>() ?? throw new ArgumentException($"Filter for column '{column}' using '{opName}' requires a non-null string value.");
+            var method = typeof(string).GetMethod(methodName, new[] { typeof(string) })!;
+            return Expression.Call(property, method, Expression.Constant(value));
         }
 
         // Coerces a JsonNode to the target CLR type and wraps it in a ConstantExpression, handling null specially.
