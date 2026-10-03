@@ -5,6 +5,8 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace DLinq
@@ -202,6 +204,234 @@ namespace DLinq
             return this;
         }
 
+        /// <summary>
+        /// Dynamically builds and sets the base WHERE predicate from a <see cref="JsonObject"/>, where each
+        /// property specifies a column filter. Column names are resolved against the generic types used by
+        /// this query's <c>Select</c>, <c>From</c>, and <c>Join</c> clauses (in that precedence order), using
+        /// the same "ClassName.PropertyName" / plain "PropertyName" resolution rules as
+        /// <see cref="OrderBy(IEnumerable{OrderBy}, bool)"/>.
+        /// </summary>
+        /// <remarks>
+        /// Each JSON property value can be either:
+        /// <list type="bullet">
+        /// <item>A JSON primitive (string, number, bool, or null) — interpreted as an equality comparison.</item>
+        /// <item>A JSON array — interpreted as an <c>IN</c> comparison against the array elements.</item>
+        /// <item>A nested JSON object of the shape <c>{ "op": "gt", "value": 18 }</c> — interpreted using the
+        /// operator abbreviation in <c>op</c> applied against <c>value</c>. Supported operators: <c>eq</c>,
+        /// <c>ne</c>, <c>gt</c>, <c>gte</c>, <c>lt</c>, <c>lte</c>, and <c>~</c> (LIKE/Contains). When
+        /// <c>value</c> is a JSON array in this shape, <c>eq</c>/<c>ne</c> produce <c>IN</c>/<c>NOT IN</c>.</item>
+        /// </list>
+        /// All property filters are combined using <paramref name="combineOperator"/> ("and" or "or", case-insensitive).
+        /// This method sets the base WHERE predicate (equivalent to calling <see cref="Where(LambdaExpression)"/>);
+        /// it does not chain with any previously set WHERE predicate. Use <see cref="AndWhere"/>/<see cref="OrWhere"/>
+        /// afterward to add more conditions.
+        /// </remarks>
+        /// <param name="filter">A JsonObject whose properties specify the column filters to apply.</param>
+        /// <param name="combineOperator">How to combine the individual property filters: "and" or "or" (default "and").</param>
+        /// <param name="ignoreInvalidColumns">
+        /// When true, properties whose column name cannot be resolved to a known type/property are silently
+        /// skipped instead of throwing. Defaults to false.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="filter"/> is null.</exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="combineOperator"/> is not "and"/"or", a column cannot be resolved (and
+        /// <paramref name="ignoreInvalidColumns"/> is false), or an unsupported <c>op</c> value is used.
+        /// </exception>
+        public SqlQuery<T> Where(JsonObject filter, string combineOperator = "and", bool ignoreInvalidColumns = false)
+        {
+            var lambda = BuildJsonPredicate(filter, combineOperator, ignoreInvalidColumns);
+            return Where(lambda);
+        }
+
+        // Builds a combined LambdaExpression predicate from a JsonObject's properties, resolving each column
+        // against the Select/From/Join generic types of this query. Shared by the Where/AndWhere/OrWhere
+        // JsonObject overloads.
+        private LambdaExpression BuildJsonPredicate(JsonObject filter, string combineOperator, bool ignoreInvalidColumns)
+        {
+            if (filter == null) throw new ArgumentNullException(nameof(filter));
+
+            if (!string.Equals(combineOperator, "and", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(combineOperator, "or", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Only 'and' and 'or' are supported.", nameof(combineOperator));
+
+            var useAnd = string.Equals(combineOperator, "and", StringComparison.OrdinalIgnoreCase);
+
+            // Map from resolved entity type to its ParameterExpression, so all filters against the
+            // same type reuse a single parameter (needed to build a valid multi-parameter lambda).
+            var paramsByType = new Dictionary<Type, ParameterExpression>();
+            Expression? combined = null;
+
+            foreach (var kvp in filter)
+            {
+                var column = kvp.Key;
+                var jsonValue = kvp.Value;
+
+                Type targetType;
+                string propertyName;
+                try
+                {
+                    (targetType, propertyName) = ResolveColumn(column);
+                }
+                catch (ArgumentException)
+                {
+                    if (ignoreInvalidColumns) continue;
+                    throw;
+                }
+
+                if (!paramsByType.TryGetValue(targetType, out var param))
+                {
+                    param = Expression.Parameter(targetType, $"e{paramsByType.Count + 1}");
+                    paramsByType[targetType] = param;
+                }
+
+                var property = Expression.PropertyOrField(param, propertyName);
+                var comparison = BuildJsonComparison(property, jsonValue, column);
+
+                combined = combined == null
+                    ? comparison
+                    : (useAnd ? Expression.AndAlso(combined, comparison) : Expression.OrElse(combined, comparison));
+            }
+
+            if (combined == null)
+                throw new ArgumentException("No valid column filters were found in the supplied JsonObject.", nameof(filter));
+
+            var funcType = Expression.GetFuncType(paramsByType.Values.Select(p => p.Type).Concat(new[] { typeof(bool) }).ToArray());
+            return Expression.Lambda(funcType, combined, paramsByType.Values);
+        }
+
+        // Builds a comparison expression for a single JSON property against the resolved target property.
+        private static Expression BuildJsonComparison(MemberExpression property, JsonNode? jsonValue, string column)
+        {
+            // Nested operator object: { "op": "gt", "value": 18 }
+            if (jsonValue is JsonObject opObject)
+            {
+                if (!opObject.TryGetPropertyValue("op", out var opNode) || opNode == null)
+                    throw new ArgumentException($"Filter for column '{column}' is an object but is missing the required 'op' property.");
+
+                var op = opNode.GetValue<string>();
+                opObject.TryGetPropertyValue("value", out var valueNode);
+
+                return op.ToLowerInvariant() switch
+                {
+                    "eq" => BuildEqualityOrIn(property, valueNode, column, negate: false),
+                    "ne" => BuildEqualityOrIn(property, valueNode, column, negate: true),
+                    "gt" => Expression.GreaterThan(property, CoerceConstant(valueNode, property.Type, column)),
+                    "gte" => Expression.GreaterThanOrEqual(property, CoerceConstant(valueNode, property.Type, column)),
+                    "lt" => Expression.LessThan(property, CoerceConstant(valueNode, property.Type, column)),
+                    "lte" => Expression.LessThanOrEqual(property, CoerceConstant(valueNode, property.Type, column)),
+                    "~" => BuildLike(property, valueNode, column),
+                    _ => throw new ArgumentException($"Unsupported operator '{op}' for column '{column}'.")
+                };
+            }
+
+            // Plain JsonValue (primitive) or array => equality / IN
+            return BuildEqualityOrIn(property, jsonValue, column, negate: false);
+        }
+
+        // Builds an equality (or IN) comparison; arrays produce IN/NOT IN, scalars produce =/<>, and null produces IS [NOT] NULL.
+        private static Expression BuildEqualityOrIn(MemberExpression property, JsonNode? valueNode, string column, bool negate)
+        {
+            if (valueNode is JsonArray array)
+            {
+                var elementType = property.Type;
+                var values = array.Select(n => CoerceValue(n, elementType, column)).ToArray();
+                var typedArray = Array.CreateInstance(elementType, values.Length);
+                for (int i = 0; i < values.Length; i++) typedArray.SetValue(values[i], i);
+
+                var containsMethod = typeof(Enumerable).GetMethods(BindingFlags.Static | BindingFlags.Public)
+                    .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
+                    .MakeGenericMethod(elementType);
+
+                var constantArray = Expression.Constant(typedArray, elementType.MakeArrayType());
+                var containsCall = Expression.Call(containsMethod, constantArray, property);
+                return negate ? Expression.Not(containsCall) : containsCall;
+            }
+
+            var constant = CoerceConstant(valueNode, property.Type, column);
+            return negate ? Expression.NotEqual(property, constant) : Expression.Equal(property, constant);
+        }
+
+        // Builds a LIKE-style comparison using string.Contains, matching the translator's existing LIKE support.
+        private static Expression BuildLike(MemberExpression property, JsonNode? valueNode, string column)
+        {
+            if (property.Type != typeof(string))
+                throw new ArgumentException($"The '~' (LIKE) operator can only be used on string columns; column '{column}' is of type '{property.Type.Name}'.");
+
+            var value = valueNode?.GetValue<string>() ?? throw new ArgumentException($"Filter for column '{column}' using '~' requires a non-null string value.");
+            var containsMethod = typeof(string).GetMethod(nameof(string.Contains), new[] { typeof(string) })!;
+            return Expression.Call(property, containsMethod, Expression.Constant(value));
+        }
+
+        // Coerces a JsonNode to the target CLR type and wraps it in a ConstantExpression, handling null specially.
+        private static ConstantExpression CoerceConstant(JsonNode? valueNode, Type targetType, string column)
+        {
+            var value = CoerceValue(valueNode, targetType, column);
+            return Expression.Constant(value, targetType);
+        }
+
+        // Coerces a JsonNode to the target CLR type (handling Nullable<T> and null).
+        private static object? CoerceValue(JsonNode? valueNode, Type targetType, string column)
+        {
+            if (valueNode == null)
+                return null;
+
+            var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+            if (valueNode is JsonValue jsonValue)
+            {
+                if (underlyingType == typeof(string))
+                    return jsonValue.GetValue<object>()?.ToString();
+
+                if (underlyingType.IsEnum)
+                {
+                    var raw = jsonValue.GetValue<object>();
+                    return raw is string s ? Enum.Parse(underlyingType, s, ignoreCase: true) : Enum.ToObject(underlyingType, Convert.ChangeType(raw, Enum.GetUnderlyingType(underlyingType)));
+                }
+
+                var rawValue = jsonValue.GetValue<object>();
+                return Convert.ChangeType(rawValue, underlyingType, System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            throw new ArgumentException($"Filter value for column '{column}' must be a JSON primitive, null, or array, not a nested object in this context.");
+        }
+
+        // Resolves a (possibly dotted) column name against the Select/From/Join generic types of this query,
+        // returning the resolved type and property name. Shares resolution rules with BuildOrderByExpression.
+        private (Type targetType, string propertyName) ResolveColumn(string column)
+        {
+            if (string.IsNullOrWhiteSpace(column))
+                throw new ArgumentException("Column name must be specified.");
+
+            var candidateTypes = GetOrderByCandidateEntityTypes();
+
+            var dotIndex = column.IndexOf('.');
+            if (dotIndex >= 0)
+            {
+                var className = column.Substring(0, dotIndex);
+                var propertyName = column.Substring(dotIndex + 1);
+
+                if (string.IsNullOrWhiteSpace(className) || string.IsNullOrWhiteSpace(propertyName))
+                    throw new ArgumentException($"Column '{column}' is not a valid 'ClassName.PropertyName' expression.");
+
+                var targetType = candidateTypes.FirstOrDefault(t => string.Equals(t.Name, className, StringComparison.Ordinal));
+                if (targetType == null)
+                    throw new ArgumentException($"Column '{column}' references class '{className}' which does not match any of the Select, From, or Join types of this query.");
+
+                if (targetType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance) == null)
+                    throw new ArgumentException($"Column '{column}': property '{propertyName}' not found on type '{targetType.Name}'.");
+
+                return (targetType, propertyName);
+            }
+            else
+            {
+                var targetType = candidateTypes.FirstOrDefault(t => t.GetProperty(column, BindingFlags.Public | BindingFlags.Instance) != null);
+                if (targetType == null)
+                    throw new ArgumentException($"Column '{column}' does not match any property on the Select, From, or Join types of this query.");
+
+                return (targetType, column);
+            }
+        }
+
         public SqlQuery<T> AndWhere(Expression<Func<T, bool>> predicate)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
@@ -220,6 +450,29 @@ namespace DLinq
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
             this.selectNode.ChainedWherePredicates.Add((predicate, "AND"));
+            return this;
+        }
+
+        /// <summary>
+        /// Dynamically builds a predicate from a <see cref="JsonObject"/> (using the same column resolution
+        /// and value/operator semantics as <see cref="Where(JsonObject, string, bool)"/>) and appends it as a
+        /// chained predicate combined with <c>AND</c>, without replacing the base WHERE predicate.
+        /// </summary>
+        /// <param name="filter">A JsonObject whose properties specify the column filters to apply.</param>
+        /// <param name="combineOperator">How to combine the individual property filters within this JsonObject: "and" or "or" (default "and").</param>
+        /// <param name="ignoreInvalidColumns">
+        /// When true, properties whose column name cannot be resolved to a known type/property are silently
+        /// skipped instead of throwing. Defaults to false.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="filter"/> is null.</exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="combineOperator"/> is not "and"/"or", a column cannot be resolved (and
+        /// <paramref name="ignoreInvalidColumns"/> is false), or an unsupported <c>op</c> value is used.
+        /// </exception>
+        public SqlQuery<T> AndWhere(JsonObject filter, string combineOperator = "and", bool ignoreInvalidColumns = false)
+        {
+            var lambda = BuildJsonPredicate(filter, combineOperator, ignoreInvalidColumns);
+            this.selectNode.ChainedWherePredicates.Add((lambda, "AND"));
             return this;
         }
 
@@ -243,6 +496,30 @@ namespace DLinq
             this.selectNode.ChainedWherePredicates.Add((predicate, "OR"));
             return this;
         }
+
+        /// <summary>
+        /// Dynamically builds a predicate from a <see cref="JsonObject"/> (using the same column resolution
+        /// and value/operator semantics as <see cref="Where(JsonObject, string, bool)"/>) and appends it as a
+        /// chained predicate combined with <c>OR</c>, without replacing the base WHERE predicate.
+        /// </summary>
+        /// <param name="filter">A JsonObject whose properties specify the column filters to apply.</param>
+        /// <param name="combineOperator">How to combine the individual property filters within this JsonObject: "and" or "or" (default "and").</param>
+        /// <param name="ignoreInvalidColumns">
+        /// When true, properties whose column name cannot be resolved to a known type/property are silently
+        /// skipped instead of throwing. Defaults to false.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="filter"/> is null.</exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="combineOperator"/> is not "and"/"or", a column cannot be resolved (and
+        /// <paramref name="ignoreInvalidColumns"/> is false), or an unsupported <c>op</c> value is used.
+        /// </exception>
+        public SqlQuery<T> OrWhere(JsonObject filter, string combineOperator = "and", bool ignoreInvalidColumns = false)
+        {
+            var lambda = BuildJsonPredicate(filter, combineOperator, ignoreInvalidColumns);
+            this.selectNode.ChainedWherePredicates.Add((lambda, "OR"));
+            return this;
+        }
+
         private void AddOrderBy(LambdaExpression expression, bool descending)
         {
             if (expression == null) throw new ArgumentNullException(nameof(expression));
@@ -349,34 +626,7 @@ namespace DLinq
         // and builds a LambdaExpression suitable for use with AddOrderBy.
         private LambdaExpression BuildOrderByExpression(string column)
         {
-            var candidateTypes = GetOrderByCandidateEntityTypes();
-
-            Type? targetType;
-            string propertyName;
-
-            var dotIndex = column.IndexOf('.');
-            if (dotIndex >= 0)
-            {
-                var className = column.Substring(0, dotIndex);
-                propertyName = column.Substring(dotIndex + 1);
-
-                if (string.IsNullOrWhiteSpace(className) || string.IsNullOrWhiteSpace(propertyName))
-                    throw new ArgumentException($"OrderBy column '{column}' is not a valid 'ClassName.PropertyName' expression.");
-
-                targetType = candidateTypes.FirstOrDefault(t => string.Equals(t.Name, className, StringComparison.Ordinal));
-                if (targetType == null)
-                    throw new ArgumentException($"OrderBy column '{column}' references class '{className}' which does not match any of the Select, From, or Join types of this query.");
-
-                if (targetType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance) == null)
-                    throw new ArgumentException($"OrderBy column '{column}': property '{propertyName}' not found on type '{targetType.Name}'.");
-            }
-            else
-            {
-                propertyName = column;
-                targetType = candidateTypes.FirstOrDefault(t => t.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance) != null);
-                if (targetType == null)
-                    throw new ArgumentException($"OrderBy column '{column}' does not match any property on the Select, From, or Join types of this query.");
-            }
+            var (targetType, propertyName) = ResolveColumn(column);
 
             var param = Expression.Parameter(targetType, "x");
             var propertyAccess = Expression.PropertyOrField(param, propertyName);

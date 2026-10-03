@@ -325,6 +325,369 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_JsonObject_PlainEquality()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "John"
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Name\" = @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("John", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_MultiplePropertiesCombinedWithAnd()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "John",
+                ["Age"] = 18
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("WHERE"));
+            Assert.IsTrue(sql.Contains("AND"));
+            Assert.IsTrue(sql.Contains("\"Name\""));
+            Assert.IsTrue(sql.Contains("\"Age\""));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_CombinedWithOr()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "John",
+                ["Age"] = 18
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter, "or");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains(" OR "));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_OperatorObject_GreaterThan()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["op"] = "gt",
+                    ["value"] = 18
+                }
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Age\" > @p0", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_OperatorObject_LikeTilde()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["op"] = "~",
+                    ["value"] = "oh"
+                }
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("LIKE"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual("%oh%", paramDict["p0"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_ArrayValue_ProducesIn()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Id"] = new System.Text.Json.Nodes.JsonArray(1, 2, 3)
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("IN"));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_NullValue_ProducesIsNull()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = null
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("NULL"));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_DottedColumnName_ResolvesFromJoinedType()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Pet.Name"] = "Fido"
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((p, pet) => p.Id == pet.OwnerId)
+                .Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("\"t2\".\"Name\""));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_UnknownColumn_Throws()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["NotAProperty"] = "value"
+            };
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.Where(filter);
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_IgnoresInvalidColumns()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["NotAProperty"] = "value",
+                ["Name"] = "John"
+            };
+            var query = new SqlQuery<Person>(provider).Where(filter, "and", ignoreInvalidColumns: true);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("\"Name\""));
+            Assert.IsFalse(sql.Contains("NotAProperty"));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_InvalidCombineOperator_Throws()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "John"
+            };
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.Where(filter, "xor");
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_NullFilter_Throws()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider);
+            try
+            {
+                query.Where((System.Text.Json.Nodes.JsonObject)null);
+                Assert.Fail("Expected ArgumentNullException was not thrown.");
+            }
+            catch (ArgumentNullException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void AndWhere_JsonObject_AppendsToBaseWhereWithAnd()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "John"
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .AndWhere(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Age\" > @p0 AND \"t1\".\"Name\" = @p1", sql);
+        }
+
+        [TestMethod]
+        public void OrWhere_JsonObject_AppendsToBaseWhereWithOr()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "Admin"
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .OrWhere(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Person\" AS \"t1\"\r\nWHERE \"t1\".\"Age\" > @p0 OR \"t1\".\"Name\" = @p1", sql);
+        }
+
+        [TestMethod]
+        public void AndWhere_JsonObject_MultiplePropertiesCombinedWithOrInternally()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Name"] = "John",
+                ["Age"] = 18
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Id > 0)
+                .AndWhere(filter, "or");
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("AND"));
+            Assert.IsTrue(sql.Contains(" OR "));
+        }
+
+        [TestMethod]
+        public void AndWhere_JsonObject_DottedColumnName_ResolvesFromJoinedType()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Pet.Name"] = "Fido"
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Join<Pet>((p, pet) => p.Id == pet.OwnerId)
+                .Where(x => x.Age > 18)
+                .AndWhere(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("\"t2\".\"Name\""));
+        }
+
+        [TestMethod]
+        public void AndWhere_JsonObject_UnknownColumn_Throws()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["NotAProperty"] = "value"
+            };
+            var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);
+            try
+            {
+                query.AndWhere(filter);
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void AndWhere_JsonObject_IgnoresInvalidColumns()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["NotAProperty"] = "value",
+                ["Name"] = "John"
+            };
+            var query = new SqlQuery<Person>(provider)
+                .Where(x => x.Age > 18)
+                .AndWhere(filter, "and", ignoreInvalidColumns: true);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("\"Name\""));
+            Assert.IsFalse(sql.Contains("NotAProperty"));
+        }
+
+        [TestMethod]
+        public void OrWhere_JsonObject_UnknownColumn_Throws()
+        {
+            var provider = GetProvider();
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["NotAProperty"] = "value"
+            };
+            var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);
+            try
+            {
+                query.OrWhere(filter);
+                Assert.Fail("Expected ArgumentException was not thrown.");
+            }
+            catch (ArgumentException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void AndWhere_JsonObject_NullFilter_Throws()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);
+            try
+            {
+                query.AndWhere((System.Text.Json.Nodes.JsonObject)null);
+                Assert.Fail("Expected ArgumentNullException was not thrown.");
+            }
+            catch (ArgumentNullException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
+        public void OrWhere_JsonObject_NullFilter_Throws()
+        {
+            var provider = GetProvider();
+            var query = new SqlQuery<Person>(provider).Where(x => x.Age > 18);
+            try
+            {
+                query.OrWhere((System.Text.Json.Nodes.JsonObject)null);
+                Assert.Fail("Expected ArgumentNullException was not thrown.");
+            }
+            catch (ArgumentNullException)
+            {
+                // expected
+            }
+        }
+
+        [TestMethod]
         public void ToInsertSql()
         {
             var provider = GetProvider();
