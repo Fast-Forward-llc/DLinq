@@ -1,23 +1,24 @@
 # DLinq: Dapper LINQ-to-SQL for .NET
 
 ## Overview
-DLinq is a Dapper LINQ-to-SQL style library for .NET 8+, designed to simplify and accelerate database access in C# applications. It provides a type-safe, composable API for querying and mutating relational databases using LINQ-like expressions, with support for SQL Server and PostgreSQL. Use `SqlQuery` alone for SQL generation with your preferred data access technology.
-This package has evolved from a true Linq-to-sql provider to a Linq-like provider in order to give an improved developer experience. One of the primary goals is to avoid Database as code. The developer defines the entity relationships as part of writing a DLinq query, a lot like in Sql. 
-By not predefining the entity relationships queries are not forced to fit a mold and developers can write queries that are more natural and easier to read. This also allows for more flexibility in the types of queries that can be written, as developers are not limited by the constraints of a predefined model.
-In essence DLinq queries are more like Sql queries and less like EF and Linq. 
+DLinq is a fluent Sql generator (.NET 8+) intended for use with Dapper. Although Dapper is the intended consumer the generated sql will work with ADO.Net or derivatives. It provides a type-safe fluent and composable API for querying and mutating relational databases using LINQ-like expressions, with support for SQL Server and PostgreSQL via database specific dialect classes. Use `SqlQuery` alone for SQL generation with your preferred data access technology or use DlinqConnection as a dapper abstraction.
+This package has evolved from a true Linq-to-sql provider to a Linq-like provider to support the fluent syntax I prefer. One of the primary goals is to avoid Database as code. Like Sql the developer defines the entity relationships as part of writing a DLinq query, using a Sql like syntax. 
+Dlinq includes dynamic predicate builders that accept typed criteria or Json. Works side by side with EF or plain dapper or most other data access technology.
 
-If your looking for a library that feels more like Sql and less like defining DDL as code this might be the right fit for you.
+## Database First or Code First
+DLinq is not opinionated about how you define your database schema. You can use it in a database-first approach, where you generate your entity classes from an existing database schema, or in a code-first approach, where you define your entity classes and let DLinq generate the necessary SQL for you.
+If choosing a Code First approach use the tool of your choice to define and manage the schema independantly of DLinq. As long as the queries are valid for the schema it'll work. 
 
 ## Key Features
 - **LINQ-Style Fluent SQL Generation:** Write expressive queries using LINQ style syntax and generate efficient SQL for your database.
 - **Mutation Operations:** Easily perform insert, update, and delete operations with automatic SQL generation and parameterization.
-- **Advanced Predicate Support:** Use complex predicates reducing boilerplate and risk of full-table changes.
+- **Advanced Predicate Support:** Use complex predicates with type safety and reducing boilerplate. Queries are reusable.
 - **Schema Control:** Use `QueryOptions.Schema` to unconditionally override the schema for any operation, or `QueryOptions.DefaultSchema` to apply a fallback schema only when the entity has no schema defined. Available on all query and mutation operations.
 - **Transaction Management:** Implicit transactions. When a transaction is started, all operations using that connection are automatically included in the transaction. No need to pass around transactions or keep track of them.
 - **Dapper Integration:** Seamless integration with Dapper for fast data access and mapping.
-- **Attribute Based Mapping:** Use attributes to configure table and column mappings, key properties, and more.
-- **Dialect Abstraction:** Feature parity for SQL Server and PostgreSQL, with dialect-specific SQL generation and quoting.
-- **Unit Testing Friendly:** Mockable Dapper provider and dependency injection support for easy unit testing.
+- **Attribute Based Mapping:** Use attributes to configure table and column mappings, key properties, and more. Override mappings with QueryOptions and hooks.
+- **Dialect Abstraction:** Feature parity for SQL Server and PostgreSQL, with injectable dialect-specific SQL generation. 
+- **Unit Testing Friendly:** Mockable Dapper provider and dependency injection support for easy unit testing. Assert on query shape and return mock results without using in-memory databases.
 
 ## Example Usage
 ```csharp

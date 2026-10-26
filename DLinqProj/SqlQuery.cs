@@ -219,7 +219,9 @@ namespace DLinq
         /// <item>A nested JSON object of the shape <c>{ "op": "gt", "value": 18 }</c> — interpreted using the
         /// operator abbreviation in <c>op</c> applied against <c>value</c>. Supported operators: <c>eq</c>,
         /// <c>ne</c>, <c>gt</c>, <c>gte</c>, <c>lt</c>, <c>lte</c>, and <c>~</c> (LIKE/Contains). When
-        /// <c>value</c> is a JSON array in this shape, <c>eq</c>/<c>ne</c> produce <c>IN</c>/<c>NOT IN</c>.</item>
+        /// <c>value</c> is a JSON array in this shape, <c>eq</c>/<c>ne</c> produce <c>IN</c>/<c>NOT IN</c>. Also supported:
+        /// <c>sw</c> (StartsWith), <c>ew</c> (EndsWith), and <c>bt</c>/<c>nbt</c> (between / not between), which use
+        /// <c>from</c> and <c>to</c> properties (either may be omitted for an open-ended range) instead of <c>value</c>.</item>
         /// </list>
         /// All property filters are combined using <paramref name="combineOperator"/> ("and" or "or", case-insensitive).
         /// This method sets the base WHERE predicate (equivalent to calling <see cref="Where(LambdaExpression)"/>);
@@ -309,6 +311,10 @@ namespace DLinq
                     throw new ArgumentException($"Filter for column '{column}' is an object but is missing the required 'op' property.");
 
                 var op = opNode.GetValue<string>();
+
+                if (op.Equals("bt", StringComparison.OrdinalIgnoreCase) || op.Equals("nbt", StringComparison.OrdinalIgnoreCase))
+                    return BuildBetween(property, opObject, column, negate: op.Equals("nbt", StringComparison.OrdinalIgnoreCase));
+
                 opObject.TryGetPropertyValue("value", out var valueNode);
 
                 return op.ToLowerInvariant() switch
@@ -364,6 +370,42 @@ namespace DLinq
             return Expression.Call(property, containsMethod, Expression.Constant(value));
         }
 
+        // Builds a range comparison for the 'bt' (between) and 'nbt' (not between) operators.
+        // bt:  (x >= from AND x <= to); nbt: (x < from OR x > to). A missing/null bound yields an open-ended range.
+        // Reversed bounds are passed through unchanged.
+        private static Expression BuildBetween(MemberExpression property, JsonObject opObject, string column, bool negate)
+        {
+            var opName = negate ? "nbt" : "bt";
+
+            if (opObject.ContainsKey("value"))
+                throw new ArgumentException($"Filter for column '{column}' using '{opName}' must use 'from' and 'to' properties and cannot specify 'value'.");
+
+            opObject.TryGetPropertyValue("from", out var fromNode);
+            opObject.TryGetPropertyValue("to", out var toNode);
+
+            if (fromNode is JsonObject or JsonArray)
+                throw new ArgumentException($"Filter for column '{column}' using '{opName}' requires 'from' to be a scalar value.");
+            if (toNode is JsonObject or JsonArray)
+                throw new ArgumentException($"Filter for column '{column}' using '{opName}' requires 'to' to be a scalar value.");
+
+            if (fromNode == null && toNode == null)
+                throw new ArgumentException($"Filter for column '{column}' using '{opName}' requires at least one of 'from' or 'to'.");
+
+            Expression? lower = null, upper = null;
+            if (fromNode != null)
+                lower = negate
+                    ? Expression.LessThan(property, CoerceConstant(fromNode, property.Type, column))
+                    : Expression.GreaterThanOrEqual(property, CoerceConstant(fromNode, property.Type, column));
+            if (toNode != null)
+                upper = negate
+                    ? Expression.GreaterThan(property, CoerceConstant(toNode, property.Type, column))
+                    : Expression.LessThanOrEqual(property, CoerceConstant(toNode, property.Type, column));
+
+            if (lower == null) return upper!;
+            if (upper == null) return lower;
+            return negate ? Expression.OrElse(lower, upper) : Expression.AndAlso(lower, upper);
+        }
+
         // Builds a StartsWith/EndsWith comparison for the 'sw'/'ew' operators; only valid on string columns.
         private static Expression BuildStringMatch(MemberExpression property, JsonNode? valueNode, string column, string methodName)
         {
@@ -400,10 +442,46 @@ namespace DLinq
                 if (underlyingType.IsEnum)
                 {
                     var raw = jsonValue.GetValue<object>();
-                    return raw is string s ? Enum.Parse(underlyingType, s, ignoreCase: true) : Enum.ToObject(underlyingType, Convert.ChangeType(raw, Enum.GetUnderlyingType(underlyingType)));
+                    if (raw is System.Text.Json.JsonElement enumElement)
+                    {
+                        if (enumElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                            raw = enumElement.GetString();
+                        else if (enumElement.ValueKind == System.Text.Json.JsonValueKind.Number)
+                            raw = enumElement.GetInt64();
+                        else
+                            throw new ArgumentException($"Filter value for column '{column}' must be a string or number for enum type '{underlyingType.Name}'.");
+                    }
+                    return raw is string s ? Enum.Parse(underlyingType, s, ignoreCase: true) : Enum.ToObject(underlyingType, Convert.ChangeType(raw, Enum.GetUnderlyingType(underlyingType), System.Globalization.CultureInfo.InvariantCulture)!);
                 }
 
                 var rawValue = jsonValue.GetValue<object>();
+                if (rawValue is System.Text.Json.JsonElement element)
+                {
+                    var text = element.ValueKind == System.Text.Json.JsonValueKind.String ? element.GetString() : element.GetRawText();
+                    rawValue = text;
+                    if (text != null)
+                    {
+                        if (underlyingType == typeof(DateTime))
+                            return DateTime.Parse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                        if (underlyingType == typeof(DateTimeOffset))
+                            return DateTimeOffset.Parse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                        if (underlyingType == typeof(Guid))
+                            return Guid.Parse(text);
+                        if (underlyingType == typeof(TimeSpan))
+                            return TimeSpan.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+                else if (rawValue is string str)
+                {
+                    if (underlyingType == typeof(DateTime))
+                        return DateTime.Parse(str, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                    if (underlyingType == typeof(DateTimeOffset))
+                        return DateTimeOffset.Parse(str, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                    if (underlyingType == typeof(Guid))
+                        return Guid.Parse(str);
+                    if (underlyingType == typeof(TimeSpan))
+                        return TimeSpan.Parse(str, System.Globalization.CultureInfo.InvariantCulture);
+                }
                 return Convert.ChangeType(rawValue, underlyingType, System.Globalization.CultureInfo.InvariantCulture);
             }
 

@@ -115,8 +115,23 @@ Each JSON property value can be one of:
 | `~` | LIKE/Contains — column must be `string`; translates to `string.Contains` |
 | `sw` | StartsWith — column must be `string`; translates to `string.StartsWith` |
 | `ew` | EndsWith — column must be `string`; translates to `string.EndsWith` |
+| `bt` | Between — uses `from`/`to` properties instead of `value`; produces `(x >= @from AND x <= @to)` |
+| `nbt` | Not between — uses `from`/`to`; produces `(x < @from OR x > @to)` |
 
 Using `~`, `sw`, or `ew` against a non-`string` column throws an `ArgumentException`.
+
+#### Between (`bt`) and not between (`nbt`)
+```
+{ "Age": { "op": "bt", "from": 18, "to": 65 } }
+// WHERE ("t1"."Age" >= @p0 AND "t1"."Age" <= @p1)
+
+{ "Age": { "op": "nbt", "from": 18, "to": 65 } }
+// WHERE ("t1"."Age" < @p0 OR "t1"."Age" > @p1)
+```
+- A missing or `null` `from`/`to` produces an open-ended range (e.g. `{ "op": "bt", "from": 18 }` → `"Age" >= @p0`). At least one bound is required.
+- Reversed bounds (`from > to`) are passed through unchanged; no validation is performed.
+- Works with any column type supported by value coercion (numbers, dates, strings, GUIDs, etc.).
+- `bt`/`nbt` cannot be combined with `value`, and `from`/`to` must be scalars (not arrays or objects); otherwise an `ArgumentException` is thrown.
 
 ### Combining filters
 All property filters within a single `JsonObject` are combined using `combineOperator` ("and" or "or", case-insensitive; default "and"). This only controls how the filters *within* that `JsonObject` are combined with each other — it is independent of how `AndWhere`/`OrWhere` append the resulting predicate to the query's existing chain.

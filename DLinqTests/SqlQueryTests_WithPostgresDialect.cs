@@ -479,6 +479,119 @@ namespace DLinqTests
         }
 
         [TestMethod]
+        public void Where_JsonObject_Between_ProducesRange()
+        {
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["from"] = 18, ["to"] = 65 }
+            };
+            var query = new SqlQuery<Person>(GetProvider()).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("\"t1\".\"Age\" >= @p0 AND \"t1\".\"Age\" <= @p1"));
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(18, paramDict["p0"]);
+            Assert.AreEqual(65, paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_NotBetween_ProducesOutsideRange()
+        {
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "nbt", ["from"] = 18, ["to"] = 65 }
+            };
+            var (sql, _) = new SqlQuery<Person>(GetProvider()).Where(filter).ToSql();
+            Console.WriteLine(sql);
+            Assert.IsTrue(sql.Contains("\"t1\".\"Age\" < @p0 OR \"t1\".\"Age\" > @p1"));
+        }
+
+        private class Appointment
+        {
+            public int Id { get; set; }
+            public DateTime ScheduledAt { get; set; }
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_Between_IsoDateStrings_ProducesDateRange()
+        {
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["ScheduledAt"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["op"] = "bt",
+                    ["from"] = "2024-01-01T00:00:00",
+                    ["to"] = "2024-12-31T23:59:59"
+                }
+            };
+            var query = new SqlQuery<Appointment>(GetProvider()).Where(filter);
+            var (sql, parameters) = query.ToSql();
+            Console.WriteLine(sql);
+            Assert.AreEqual("SELECT * FROM \"Appointment\" AS \"t1\"\r\nWHERE (\"t1\".\"ScheduledAt\" >= @p0 AND \"t1\".\"ScheduledAt\" <= @p1)", sql);
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(new DateTime(2024, 1, 1, 0, 0, 0), paramDict["p0"]);
+            Assert.AreEqual(new DateTime(2024, 12, 31, 23, 59, 59), paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_Between_OpenEnded()
+        {
+            var fromOnly = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["from"] = 18 }
+            };
+            var (sql1, _) = new SqlQuery<Person>(GetProvider()).Where(fromOnly).ToSql();
+            Assert.IsTrue(sql1.Contains(">= @p0"));
+            Assert.IsFalse(sql1.Contains("<="));
+
+            var toOnly = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["from"] = null, ["to"] = 65 }
+            };
+            var (sql2, _) = new SqlQuery<Person>(GetProvider()).Where(toOnly).ToSql();
+            Assert.IsTrue(sql2.Contains("<= @p0"));
+            Assert.IsFalse(sql2.Contains(">="));
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_Between_ReversedBounds_PassThrough()
+        {
+            var filter = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Age"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["from"] = 65, ["to"] = 18 }
+            };
+            var (_, parameters) = new SqlQuery<Person>(GetProvider()).Where(filter).ToSql();
+            var paramDict = (IDictionary<string, object>)parameters;
+            Assert.AreEqual(65, paramDict["p0"]);
+            Assert.AreEqual(18, paramDict["p1"]);
+        }
+
+        [TestMethod]
+        public void Where_JsonObject_Between_InvalidShapes_Throw()
+        {
+            var bad = new[]
+            {
+                new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["value"] = 1, ["from"] = 1 },
+                new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["value"] = new System.Text.Json.Nodes.JsonArray(1, 2) },
+                new System.Text.Json.Nodes.JsonObject { ["op"] = "bt", ["from"] = new System.Text.Json.Nodes.JsonArray(1) },
+                new System.Text.Json.Nodes.JsonObject { ["op"] = "nbt", ["to"] = new System.Text.Json.Nodes.JsonObject() },
+                new System.Text.Json.Nodes.JsonObject { ["op"] = "bt" }
+            };
+            foreach (var shape in bad)
+            {
+                var filter = new System.Text.Json.Nodes.JsonObject { ["Age"] = shape };
+                try
+                {
+                    new SqlQuery<Person>(GetProvider()).Where(filter);
+                    Assert.Fail("Expected ArgumentException was not thrown.");
+                }
+                catch (ArgumentException)
+                {
+                }
+            }
+        }
+
+        [TestMethod]
         public void Where_JsonObject_ArrayValue_ProducesIn()
         {
             var provider = GetProvider();
